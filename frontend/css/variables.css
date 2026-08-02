@@ -1,0 +1,41 @@
+:root {
+  /* Brand Colors */
+  --primary:        #C8290C;   /* Deep red from logo */
+  --primary-dark:   #9E1E09;
+  --primary-light:  #E8452A;
+  --accent:         #F5A623;   /* Golden orange from logo */
+  --accent-dark:    #D4891A;
+
+  /* Neutrals */
+  --white:          #FFFFFF;
+  --bg-light:       #FFF9F5;
+  --bg-card:        #FFFFFF;
+  --border:         #EDE0D4;
+  --text-primary:   #1A1A1A;
+  --text-secondary: #6B5E54;
+  --text-muted:     #A89A8E;
+
+  /* Sidebar */
+  --sidebar-bg:     #1C0A04;
+  --sidebar-hover:  #2E1108;
+  --sidebar-active: #C8290C;
+  --sidebar-text:   #F5E6DC;
+
+  /* Shadows */
+  --shadow-sm:  0 2px 8px rgba(200, 41, 12, 0.08);
+  --shadow-md:  0 4px 20px rgba(200, 41, 12, 0.14);
+  --shadow-lg:  0 8px 40px rgba(200, 41, 12, 0.18);
+
+  /* Radius */
+  --radius-sm:  6px;
+  --radius-md:  12px;
+  --radius-lg:  20px;
+  --radius-xl:  32px;
+
+  /* Typography */
+  --font-main:  'Inter', 'Segoe UI', sans-serif;
+  --font-brand: 'Cinzel', serif;
+
+  /* Transitions */
+  --transition: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}

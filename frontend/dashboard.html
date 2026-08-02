@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Sahjanand</title>
+  <meta name="description" content="Sahjanand Dashboard" />
+  <link rel="icon" type="image/png" href="assets/images/logo.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cinzel:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+</head>
+<body>
+
+<!-- Mobile Overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- ══════════════════════════════
+     SIDEBAR
+══════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+
+  <!-- Brand -->
+  <a href="dashboard.html" class="sidebar-brand">
+    <img src="assets/images/logo.png" alt="Sahjanand" />
+    <div class="brand-text">
+      <span class="brand-name">Sahjanand</span>
+      <span class="brand-tagline">सहजानन्द : विश्वासानन्द :</span>
+    </div>
+  </a>
+
+  <!-- Nav -->
+  <nav class="sidebar-nav">
+
+    <div class="nav-section-label">Main Menu</div>
+
+    <a href="#" class="nav-item active" data-section="sales" onclick="showSection('sales', this)">
+      <i class="fa-solid fa-chart-line nav-icon"></i>
+      <span class="nav-label">Sales</span>
+    </a>
+
+    <a href="#" class="nav-item" data-section="reminders" onclick="showSection('reminders', this)">
+      <i class="fa-solid fa-bell nav-icon"></i>
+      <span class="nav-label">Reminders</span>
+      <span class="nav-badge" id="reminderBadge">3</span>
+    </a>
+
+    <a href="#" class="nav-item" data-section="samples" onclick="showSection('samples', this)">
+      <i class="fa-solid fa-box-open nav-icon"></i>
+      <span class="nav-label">Samples</span>
+    </a>
+
+    <div class="nav-section-label" style="margin-top:12px;">Account</div>
+
+    <a href="#" class="nav-item" data-section="profile" onclick="showSection('profile', this)">
+      <i class="fa-solid fa-user nav-icon"></i>
+      <span class="nav-label">Profile</span>
+    </a>
+
+  </nav>
+
+  <!-- Footer -->
+  <div class="sidebar-footer">
+    <a href="#" class="nav-item" onclick="logout()">
+      <i class="fa-solid fa-right-from-bracket nav-icon"></i>
+      <span class="nav-label">Logout</span>
+    </a>
+  </div>
+
+</aside>
+
+<!-- ══════════════════════════════
+     MAIN CONTENT
+══════════════════════════════ -->
+<div class="main-content" id="mainContent">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="btn-toggle-sidebar" id="toggleBtn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <span class="page-title" id="pageTitle">Sales Dashboard</span>
+    </div>
+    <div class="topbar-right">
+      <a href="#" class="topbar-icon-btn" title="Notifications" onclick="showSection('reminders', document.querySelector('[data-section=reminders]'))">
+        <i class="fa-regular fa-bell"></i>
+        <span class="notif-dot"></span>
+      </a>
+      <div class="user-avatar" id="userAvatar" title="Profile">SJ</div>
+    </div>
+  </header>
+
+  <!-- Page Content -->
+  <div class="page-content">
+
+    <!-- ════════════ SALES SECTION ════════════ -->
+    <section class="section active" id="section-sales">
+      <div class="greeting-bar">
+        <h2>Sales Overview</h2>
+        <p id="greetingText">Welcome back! Here's what's happening today.</p>
+      </div>
+
+      <!-- Stat Cards -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-icon red"><i class="fa-solid fa-indian-rupee-sign"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">Total Revenue</div>
+            <div class="stat-value" id="statRevenue">₹0</div>
+            <div class="stat-change up" id="statRevenueChange"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon orange"><i class="fa-solid fa-bag-shopping"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">Total Orders</div>
+            <div class="stat-value" id="statOrders">0</div>
+            <div class="stat-change up" id="statOrdersChange"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green"><i class="fa-solid fa-users"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">Customers</div>
+            <div class="stat-value" id="statCustomers">0</div>
+            <div class="stat-change up"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue"><i class="fa-solid fa-boxes-stacked"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">Samples Sent</div>
+            <div class="stat-value" id="statSamples">0</div>
+            <div class="stat-change up"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Sales Table -->
+      <div class="section-header">
+        <h3><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary);margin-right:8px;"></i>Recent Sales</h3>
+        <button class="btn-primary">
+          <i class="fa-solid fa-plus"></i> Add Sale
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Customer</th>
+                <th>Product</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="salesTableBody">
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <i class="fa-solid fa-chart-bar"></i>
+                    <p>No sales data yet. Start adding your first sale.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════ REMINDERS SECTION ════════════ -->
+    <section class="section" id="section-reminders">
+      <div class="greeting-bar">
+        <h2>Reminders</h2>
+        <p>Stay on top of your tasks and follow-ups.</p>
+      </div>
+
+      <div class="section-header">
+        <h3><i class="fa-solid fa-bell" style="color:var(--accent-dark);margin-right:8px;"></i>Upcoming Reminders</h3>
+        <button class="btn-primary" onclick="openReminderModal()">
+          <i class="fa-solid fa-plus"></i> Add Reminder
+        </button>
+      </div>
+
+      <div class="reminder-grid" id="reminderGrid">
+        <!-- Sample reminders -->
+        <div class="reminder-card">
+          <div class="reminder-icon"><i class="fa-solid fa-phone"></i></div>
+          <div class="reminder-body">
+            <h4>Follow up with client</h4>
+            <p>Call Ramesh regarding sample delivery confirmation.</p>
+            <div class="reminder-time"><i class="fa-regular fa-clock"></i> Today, 3:00 PM</div>
+          </div>
+        </div>
+        <div class="reminder-card">
+          <div class="reminder-icon"><i class="fa-solid fa-truck"></i></div>
+          <div class="reminder-body">
+            <h4>Dispatch order #1042</h4>
+            <p>Ensure samples are packed and ready for dispatch.</p>
+            <div class="reminder-time"><i class="fa-regular fa-clock"></i> Tomorrow, 10:00 AM</div>
+          </div>
+        </div>
+        <div class="reminder-card">
+          <div class="reminder-icon"><i class="fa-solid fa-file-invoice"></i></div>
+          <div class="reminder-body">
+            <h4>Monthly invoice review</h4>
+            <p>Review and send invoices for the month of July.</p>
+            <div class="reminder-time"><i class="fa-regular fa-clock"></i> Aug 5, 2026</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════ SAMPLES SECTION ════════════ -->
+    <section class="section" id="section-samples">
+      <div class="greeting-bar">
+        <h2>Samples</h2>
+        <p>Manage your product samples and images stored on Cloudinary.</p>
+      </div>
+
+      <div class="section-header">
+        <h3><i class="fa-solid fa-box-open" style="color:var(--primary);margin-right:8px;"></i>Product Samples</h3>
+        <button class="btn-primary" onclick="document.getElementById('sampleUpload').click()">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Upload Sample
+        </button>
+        <input type="file" id="sampleUpload" accept="image/*" style="display:none" onchange="uploadSample(this)" />
+      </div>
+
+      <div class="samples-grid" id="samplesGrid">
+        <div class="empty-state" style="grid-column:1/-1">
+          <i class="fa-solid fa-image"></i>
+          <p>No samples uploaded yet. Click "Upload Sample" to add your first one.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════ PROFILE SECTION ════════════ -->
+    <section class="section" id="section-profile">
+      <div class="greeting-bar">
+        <h2>Profile</h2>
+        <p>Manage your account information.</p>
+      </div>
+      <div class="card" style="padding:28px;max-width:480px;">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;">
+          <div class="user-avatar" style="width:60px;height:60px;font-size:1.3rem;" id="profileAvatar">SJ</div>
+          <div>
+            <div style="font-weight:700;font-size:1.05rem;" id="profileName">—</div>
+            <div style="color:var(--text-secondary);font-size:0.875rem;" id="profileEmail">—</div>
+          </div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin-bottom:20px;" />
+        <button class="btn-primary" style="width:100%;justify-content:center;" onclick="logout()">
+          <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+        </button>
+      </div>
+    </section>
+
+  </div><!-- /page-content -->
+</div><!-- /main-content -->
+
+<script src="js/dashboard.js"></script>
+</body>
+</html>

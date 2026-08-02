@@ -1,0 +1,65 @@
+# ══════════════════════════════
+#  Python / FastAPI
+# ══════════════════════════════
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.env
+*.env
+*.log
+
+# SQLite local DB (never commit)
+backend/sahjanand.db
+
+# ══════════════════════════════
+#  Flutter / Dart
+# ══════════════════════════════
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/.packages
+flutter_app/build/
+flutter_app/pubspec.lock
+flutter_app/*.iml
+
+# Android
+flutter_app/android/.gradle/
+flutter_app/android/captures/
+flutter_app/android/local.properties
+flutter_app/android/key.properties
+flutter_app/android/app/google-services.json
+
+# iOS
+flutter_app/ios/.symlinks/
+flutter_app/ios/Pods/
+flutter_app/ios/Runner.xcworkspace/xcuserdata/
+flutter_app/ios/Flutter/flutter_export_environment.sh
+flutter_app/ios/Flutter/flutter_export_environment.sh
+flutter_app/ios/GoogleService-Info.plist
+
+# ══════════════════════════════
+#  IDE / OS
+# ══════════════════════════════
+.vscode/
+.idea/
+*.suo
+.DS_Store
+Thumbs.db
+
+# ══════════════════════════════
+#  Secrets
+# ══════════════════════════════
+*.pem
+*.key
+*.p12
+*.jks
+.env
+.env.*
+!.env.example

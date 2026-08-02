@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — Sahjanand</title>
+  <meta name="description" content="Sign in to Sahjanand — सहजानन्द : विश्वासानन्द :" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/images/logo.png" />
+
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cinzel:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <link rel="stylesheet" href="css/login.css" />
+</head>
+<body>
+
+<div class="login-page">
+
+  <!-- ── Left Hero Panel ── -->
+  <aside class="login-hero">
+    <img src="assets/images/logo.png" alt="Sahjanand Logo" class="hero-logo" />
+    <h2 class="hero-brand">Sahjanand</h2>
+    <p class="hero-tagline">सहजानन्द : विश्वासानन्द :</p>
+    <div class="hero-divider"></div>
+    <ul class="hero-features">
+      <li>Sales Dashboard &amp; Reports</li>
+      <li>Smart Reminders</li>
+      <li>Product Samples Management</li>
+      <li>Cloud Image Storage</li>
+    </ul>
+  </aside>
+
+  <!-- ── Right Form Panel ── -->
+  <main class="login-form-panel">
+    <div class="login-card">
+
+      <!-- Mobile logo (hidden on desktop) -->
+      <img src="assets/images/logo.png" alt="Sahjanand Logo" class="mobile-logo" />
+
+      <div class="form-header">
+        <h1>Welcome to <span>Sahjanand</span></h1>
+        <p>Sign in to access your dashboard</p>
+      </div>
+
+      <!-- Alert box -->
+      <div class="alert alert-error" id="alertBox" role="alert">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span id="alertMsg">Invalid email or password.</span>
+      </div>
+
+      <form id="loginForm" novalidate>
+
+        <!-- Email -->
+        <div class="form-group" id="emailGroup">
+          <label for="email">Email Address</label>
+          <div class="input-wrapper">
+            <i class="fa-regular fa-envelope input-icon"></i>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              placeholder="you@example.com"
+              autocomplete="email"
+              required
+            />
+          </div>
+          <span class="form-error" id="emailError">Please enter a valid email address.</span>
+        </div>
+
+        <!-- Password -->
+        <div class="form-group" id="passwordGroup">
+          <label for="password">Password</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            />
+            <button type="button" class="toggle-password" id="togglePwd" aria-label="Toggle password visibility">
+              <i class="fa-regular fa-eye" id="eyeIcon"></i>
+            </button>
+          </div>
+          <span class="form-error" id="passwordError">Password is required.</span>
+        </div>
+
+        <!-- Forgot Password -->
+        <div class="forgot-link">
+          <a href="forgot-password.html">Forgot password?</a>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit" class="btn-login" id="loginBtn">
+          <span class="btn-text">
+            <i class="fa-solid fa-right-to-bracket"></i> Sign In
+          </span>
+          <span class="btn-spinner"></span>
+        </button>
+
+      </form>
+
+      <div class="login-footer">
+        &copy; 2026 Sahjanand. All rights reserved.
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+<script src="js/login.js"></script>
+</body>
+</html>
