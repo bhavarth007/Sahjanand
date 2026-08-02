@@ -11,12 +11,16 @@ build/
 .venv/
 venv/
 env/
-.env
-*.env
 *.log
 
-# SQLite local DB (never commit)
+# Environment files — NEVER commit secrets
+.env
+*.env
+!.env.example
+
+# Local SQLite database
 backend/sahjanand.db
+backend/*.db
 
 # ══════════════════════════════
 #  Flutter / Dart
@@ -41,25 +45,22 @@ flutter_app/ios/.symlinks/
 flutter_app/ios/Pods/
 flutter_app/ios/Runner.xcworkspace/xcuserdata/
 flutter_app/ios/Flutter/flutter_export_environment.sh
-flutter_app/ios/Flutter/flutter_export_environment.sh
 flutter_app/ios/GoogleService-Info.plist
 
 # ══════════════════════════════
 #  IDE / OS
 # ══════════════════════════════
-.vscode/
+.vscode/settings.json
 .idea/
 *.suo
 .DS_Store
 Thumbs.db
 
 # ══════════════════════════════
-#  Secrets
+#  Secrets / Keys
 # ══════════════════════════════
 *.pem
 *.key
 *.p12
 *.jks
-.env
-.env.*
-!.env.example
+*.keystore
