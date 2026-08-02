@@ -6,6 +6,7 @@ const userData = JSON.parse(localStorage.getItem('sahjanand_user') || '{}');
 
 if (!token) {
   window.location.replace('login.html');
+  throw new Error('Not authenticated');
 }
 
 // ── Init ────────────────────────────────────────────────

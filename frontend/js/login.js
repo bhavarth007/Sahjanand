@@ -1,15 +1,20 @@
 const API = 'http://localhost:8000';
 
-// ── Password visibility toggle ──
+// ── If already logged in, go straight to dashboard ──────
+if (localStorage.getItem('sahjanand_token')) {
+  window.location.replace('dashboard.html');
+}
+
+// ── Password visibility toggle ───────────────────────────
 document.getElementById('togglePwd').addEventListener('click', () => {
   const input = document.getElementById('password');
   const icon  = document.getElementById('eyeIcon');
-  const isHidden = input.type === 'password';
-  input.type = isHidden ? 'text' : 'password';
-  icon.className = isHidden ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+  const hidden = input.type === 'password';
+  input.type      = hidden ? 'text' : 'password';
+  icon.className  = hidden ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
 });
 
-// ── Form submission ──
+// ── Form submit ──────────────────────────────────────────
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
@@ -19,27 +24,23 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   const alertBox = document.getElementById('alertBox');
   const alertMsg = document.getElementById('alertMsg');
 
-  // Clear previous errors
+  // Reset errors
   alertBox.classList.remove('show');
   document.getElementById('emailGroup').classList.remove('has-error');
   document.getElementById('passwordGroup').classList.remove('has-error');
 
-  // Client-side validation
+  // Validate
   let valid = true;
-
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     document.getElementById('emailGroup').classList.add('has-error');
     valid = false;
   }
-
   if (!password) {
     document.getElementById('passwordGroup').classList.add('has-error');
     valid = false;
   }
-
   if (!valid) return;
 
-  // Show loading state
   btn.classList.add('loading');
 
   try {
@@ -55,17 +56,16 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       throw new Error(data.detail || 'Invalid email or password.');
     }
 
-    // Save token and user info
+    // Save session
     localStorage.setItem('sahjanand_token', data.access_token);
     localStorage.setItem('sahjanand_user', JSON.stringify(data.user));
 
-    // Redirect to dashboard
-    window.location.href = 'dashboard.html';
+    // Go to dashboard — Sales section loads by default
+    window.location.replace('dashboard.html');
 
   } catch (err) {
     alertMsg.textContent = err.message || 'Something went wrong. Please try again.';
     alertBox.classList.add('show');
-  } finally {
     btn.classList.remove('loading');
   }
 });
