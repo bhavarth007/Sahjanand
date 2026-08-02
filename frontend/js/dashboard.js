@@ -5,7 +5,7 @@ const token    = localStorage.getItem('sahjanand_token');
 const userData = JSON.parse(localStorage.getItem('sahjanand_user') || '{}');
 
 if (!token) {
-  window.location.replace('login.html');
+  window.location.replace('/login');
   throw new Error('Not authenticated');
 }
 
@@ -220,5 +220,5 @@ async function uploadSample(input) {
 function logout() {
   localStorage.removeItem('sahjanand_token');
   localStorage.removeItem('sahjanand_user');
-  window.location.replace('login.html');
+  window.location.replace('/login');
 }

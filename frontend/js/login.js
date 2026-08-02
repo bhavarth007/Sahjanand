@@ -2,7 +2,7 @@ const API = 'http://localhost:8000';
 
 // ── If already logged in, go straight to dashboard ──────
 if (localStorage.getItem('sahjanand_token')) {
-  window.location.replace('dashboard.html');
+  window.location.replace('/dashboard');
 }
 
 // ── Password visibility toggle ───────────────────────────
@@ -61,7 +61,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     localStorage.setItem('sahjanand_user', JSON.stringify(data.user));
 
     // Go to dashboard — Sales section loads by default
-    window.location.replace('dashboard.html');
+    window.location.replace('/dashboard');
 
   } catch (err) {
     alertMsg.textContent = err.message || 'Something went wrong. Please try again.';
