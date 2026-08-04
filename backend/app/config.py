@@ -19,9 +19,10 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "Sahjanand"
     FRONTEND_URL: str = "http://127.0.0.1:5500"
-
-    # Production frontend URL (set in Render env vars)
     PRODUCTION_URL: str = ""
+
+    # Logo — local path used in dev, Cloudinary URL used in production
+    LOGO_URL: str = "/assets/images/logo.png"
 
     @property
     def async_database_url(self) -> str:

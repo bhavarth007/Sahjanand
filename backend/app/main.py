@@ -63,6 +63,15 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/config", tags=["Config"])
+async def app_config():
+    """Returns public app config including logo URL for frontend use."""
+    return {
+        "app_name": settings.APP_NAME,
+        "logo_url": settings.LOGO_URL,
+    }
+
+
 # ── Serve frontend static files ─────────────────────────
 # CSS, JS, images etc.
 if FRONTEND_DIR.exists():

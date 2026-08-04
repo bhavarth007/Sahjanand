@@ -18,9 +18,10 @@ env/
 *.env
 !.env.example
 
-# Local SQLite database
+# Local SQLite database — never commit, use backup_db.py instead
 backend/sahjanand.db
 backend/*.db
+backend/backups/*.db
 
 # ══════════════════════════════
 #  Flutter / Dart

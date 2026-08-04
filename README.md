@@ -8,73 +8,57 @@ A full-stack business management platform built with **Python (FastAPI)**, **Pos
 
 ```
 Sahjanand/
-├── backend/                  # Python FastAPI REST API
+├── backend/
 │   ├── app/
-│   │   ├── main.py           # App entry point, CORS, lifespan
+│   │   ├── main.py           # FastAPI app — also serves frontend HTML/CSS/JS
 │   │   ├── config.py         # Settings (reads .env)
 │   │   ├── database.py       # SQLAlchemy async engine
 │   │   ├── auth.py           # JWT helpers, password hashing
 │   │   ├── seed.py           # Creates default admin user
 │   │   ├── models/
-│   │   │   ├── db_models.py  # SQLAlchemy ORM tables
-│   │   │   └── user.py       # Pydantic request/response schemas
+│   │   │   ├── db_models.py  # SQLAlchemy ORM: users, sales, reminders, samples
+│   │   │   └── user.py       # Pydantic schemas
 │   │   └── routes/
 │   │       ├── auth.py       # /api/auth — login, register, forgot-password
 │   │       ├── sales.py      # /api/sales
 │   │       ├── reminders.py  # /api/reminders
 │   │       └── samples.py    # /api/samples + Cloudinary upload
-│   ├── migrations/           # Alembic migrations
-│   │   └── versions/
-│   │       └── 0001_initial_schema.py
+│   ├── migrations/           # Alembic migrations for PostgreSQL
+│   ├── backups/              # Local DB backups (git-ignored)
+│   ├── backup_db.py          # Safe hot-backup script
+│   ├── upload_logo.py        # Upload logo to Cloudinary
 │   ├── requirements.txt
 │   ├── render.yaml           # Render.com deployment config
 │   ├── .env.example          # Copy to .env and fill in values
-│   └── run_dev.bat           # One-click local server start
+│   └── run_dev.bat           # One-click local server
 │
-├── frontend/                 # Responsive web app
-│   ├── login.html            # Login page
-│   ├── forgot-password.html  # Forgot password page
-│   ├── dashboard.html        # Main dashboard (Sales / Reminders / Samples)
+├── frontend/
+│   ├── login.html            # Login + Register page
+│   ├── forgot-password.html
+│   ├── dashboard.html        # Sales / Reminders / Samples + profile dropdown
+│   ├── assets/images/
+│   │   └── logo.png          # Official Sahjanand logo (committed to repo)
 │   ├── css/
-│   │   ├── variables.css     # Brand colours and tokens
-│   │   ├── login.css
-│   │   └── dashboard.css
 │   └── js/
 │       ├── login.js
-│       └── dashboard.js
+│       ├── dashboard.js
+│       └── logo.js           # Dynamic logo loader (local/Cloudinary)
 │
-└── flutter_app/              # Flutter mobile app (Android first, iOS later)
-    ├── lib/
-    │   ├── main.dart
-    │   ├── core/
-    │   │   ├── api/          # Dio client, auth service, GoRouter
-    │   │   ├── constants/    # App constants, API URLs
-    │   │   ├── theme/        # Brand colours, MaterialTheme
-    │   │   └── utils/        # Validators
-    │   ├── features/
-    │   │   ├── auth/         # Login + Forgot Password screens
-    │   │   ├── dashboard/    # Dashboard with Nav Rail / Bottom Nav
-    │   │   ├── sales/        # Sales screen
-    │   │   ├── reminders/    # Reminders screen
-    │   │   └── samples/      # Samples screen
-    │   └── shared/
-    │       ├── models/       # UserModel
-    │       └── widgets/      # SahjanandLogo, PrimaryButton
-    └── pubspec.yaml
+└── flutter_app/              # Flutter mobile app (Android + iOS)
 ```
 
 ---
 
 ## Tech Stack
 
-| Layer      | Technology                                   |
-|------------|----------------------------------------------|
-| Backend    | Python 3.12, FastAPI, SQLAlchemy (async)     |
-| Database   | PostgreSQL (production), SQLite (local dev)  |
-| Images     | Cloudinary (free tier)                       |
-| Hosting    | Render.com (free tier)                       |
-| Web        | HTML5, CSS3, Vanilla JS                      |
-| Mobile     | Flutter 3.x — Android + iOS                  |
+| Layer      | Technology                                        |
+|------------|---------------------------------------------------|
+| Backend    | Python 3.12, FastAPI, SQLAlchemy async            |
+| Database   | PostgreSQL (production), SQLite (local dev)       |
+| Images     | Cloudinary (free tier)                            |
+| Hosting    | Render.com (free tier)                            |
+| Web        | HTML5, CSS3, Vanilla JS — served by FastAPI       |
+| Mobile     | Flutter 3.x — Android + iOS                      |
 
 ---
 
@@ -85,75 +69,89 @@ Email:    admin@gmail.com
 Password: admin
 ```
 
-> Change this password immediately after first login in production.
+> Change this password immediately after deploying to production.
 
 ---
 
 ## Local Setup
-
-### Backend
 
 ```bash
 cd backend
 
 # 1. Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate       # Windows
-# source .venv/bin/activate  # Mac/Linux
+.venv\Scripts\activate        # Windows
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Create .env file
-copy .env.example .env       # Windows
-# cp .env.example .env       # Mac/Linux
-# Fill in Cloudinary credentials
+# 3. Create .env
+copy .env.example .env        # then fill in Cloudinary keys
 
-# 4. Seed the admin user
+# 4. Seed admin user
 python -m app.seed
 
-# 5. Start the server
+# 5. Start server
 uvicorn app.main:app --reload --port 8000
 ```
 
-API runs at: `http://localhost:8000`
-Swagger docs: `http://localhost:8000/docs`
+Or double-click **`run_dev.bat`**.
 
-Or simply double-click **`run_dev.bat`** (Windows).
+| URL | What |
+|-----|------|
+| `http://localhost:8000` | Login page |
+| `http://localhost:8000/dashboard` | Dashboard |
+| `http://localhost:8000/docs` | Swagger API docs |
 
-### Frontend
+Login: `admin@gmail.com` / `admin`
 
-Open `frontend/login.html` with **VS Code Live Server** (port 5500).
+---
 
-Login with `admin@gmail.com` / `admin`.
+## Data Safety — Never Lose Records
 
-### Flutter
+### Images (Cloudinary)
+All uploaded sample images go to Cloudinary — they are stored in the cloud permanently, independent of the server. Even if Render restarts or redeploys, images are safe.
 
+To upload the logo to Cloudinary:
 ```bash
-# Install Flutter SDK first: https://docs.flutter.dev/get-started/install/windows
-
-cd flutter_app
-flutter pub get
-flutter run        # Android emulator or physical device
+# After filling Cloudinary credentials in .env:
+python upload_logo.py
 ```
+
+### Database Backup (SQLite — local dev)
+Run anytime, safe while server is live:
+```bash
+python backup_db.py
+```
+Creates a timestamped backup in `backend/backups/`. Keeps the last 10 backups automatically.
+
+### Database Safety (PostgreSQL — production)
+- Render's free PostgreSQL persists data across deployments and restarts
+- `alembic upgrade head` runs on deploy — adds new columns, never drops existing data
+- **Never run `alembic downgrade`** in production without a manual backup first
+- Render dashboard → your database → **Backups** tab for point-in-time restore
+
+### Safe Deployment Checklist
+Before pushing to production:
+- [ ] All new DB columns added via `alembic revision --autogenerate`, never manual DROP
+- [ ] Cloudinary credentials set in Render environment variables
+- [ ] `SECRET_KEY` set in Render (auto-generated by render.yaml)
+- [ ] Test login and dashboard locally before pushing
 
 ---
 
 ## Deployment on Render.com
 
-1. Push this repo to GitHub
-2. Go to [render.com](https://render.com) → **New** → **Web Service**
-3. Connect your GitHub repo
-4. Render reads `backend/render.yaml` automatically:
-   - Creates the FastAPI web service
-   - Creates a free PostgreSQL database
-   - Runs `alembic upgrade head` before starting
-5. Add these environment variables in Render dashboard:
+1. Push repo to GitHub
+2. [render.com](https://render.com) → New → Web Service → connect repo
+3. Render reads `backend/render.yaml` automatically:
+   - Creates FastAPI web service
+   - Creates free PostgreSQL database
+   - Runs `alembic upgrade head` before starting (safe migration)
+4. Add in Render Environment Variables:
    - `CLOUDINARY_CLOUD_NAME`
    - `CLOUDINARY_API_KEY`
    - `CLOUDINARY_API_SECRET`
-
-Get free Cloudinary credentials at [cloudinary.com](https://cloudinary.com).
 
 ---
 
@@ -161,16 +159,16 @@ Get free Cloudinary credentials at [cloudinary.com](https://cloudinary.com).
 
 | Feature | Web | Flutter |
 |---------|-----|---------|
-| Login (email + password) | ✅ | ✅ |
+| Login + Register | ✅ | ✅ |
 | Forgot password | ✅ | ✅ |
 | Sales dashboard | ✅ | ✅ |
 | Reminders | ✅ | ✅ |
 | Samples + image upload | ✅ | ✅ |
 | User profile dropdown | ✅ | ✅ |
 | Responsive design | ✅ | ✅ |
-| JWT authentication | ✅ | ✅ |
-| PostgreSQL (production) | ✅ | ✅ |
-| Cloudinary image storage | ✅ | ✅ |
+| JWT auth | ✅ | ✅ |
+| PostgreSQL (prod) | ✅ | ✅ |
+| Cloudinary images | ✅ | ✅ |
 
 ---
 
