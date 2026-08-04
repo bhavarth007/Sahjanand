@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="outerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C8290C;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#9E1E09;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="innerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F5A623;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D4891A;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer geometric star/mandala shape (8-pointed) -->
+  <g transform="translate(100,100)">
+    <!-- Outer rotated squares forming star pattern -->
+    <rect x="-42" y="-42" width="84" height="84" rx="8"
+          fill="none" stroke="url(#outerGrad)" stroke-width="5"
+          transform="rotate(0)" />
+    <rect x="-42" y="-42" width="84" height="84" rx="8"
+          fill="none" stroke="url(#outerGrad)" stroke-width="5"
+          transform="rotate(45)" />
+
+    <!-- Diamond petals -->
+    <polygon points="0,-58 10,-42 0,-30 -10,-42"
+             fill="url(#outerGrad)" opacity="0.9"/>
+    <polygon points="58,0 42,10 30,0 42,-10"
+             fill="url(#outerGrad)" opacity="0.9"/>
+    <polygon points="0,58 -10,42 0,30 10,42"
+             fill="url(#outerGrad)" opacity="0.9"/>
+    <polygon points="-58,0 -42,-10 -30,0 -42,10"
+             fill="url(#outerGrad)" opacity="0.9"/>
+    <polygon points="-41,-41 -28,-48 -20,-36 -33,-29"
+             fill="url(#outerGrad)" opacity="0.7"/>
+    <polygon points="41,-41 48,-28 36,-20 29,-33"
+             fill="url(#outerGrad)" opacity="0.7"/>
+    <polygon points="41,41 28,48 20,36 33,29"
+             fill="url(#outerGrad)" opacity="0.7"/>
+    <polygon points="-41,41 -48,28 -36,20 -29,33"
+             fill="url(#outerGrad)" opacity="0.7"/>
+
+    <!-- Middle ring -->
+    <circle cx="0" cy="0" r="32" fill="url(#outerGrad)" opacity="0.15"/>
+    <circle cx="0" cy="0" r="32" fill="none" stroke="url(#outerGrad)" stroke-width="3"/>
+
+    <!-- Inner orange circle -->
+    <circle cx="0" cy="0" r="24" fill="url(#innerGrad)" opacity="0.2"/>
+    <circle cx="0" cy="0" r="24" fill="none" stroke="url(#innerGrad)" stroke-width="2.5"/>
+
+    <!-- Central S letter -->
+    <text x="0" y="11"
+          text-anchor="middle"
+          font-family="Georgia, 'Times New Roman', serif"
+          font-size="28"
+          font-weight="bold"
+          fill="url(#innerGrad)"
+          letter-spacing="-1">S</text>
+  </g>
+</svg>

@@ -5,17 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login — Sahjanand</title>
   <meta name="description" content="Sign in to Sahjanand — सहजानन्द : विश्वासानन्द :" />
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="assets/images/logo.png" />
-
-  <!-- Fonts & Icons -->
+  <link rel="icon" type="image/svg+xml" href="/assets/images/logo.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cinzel:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-
-  <link rel="stylesheet" href="css/login.css" />
+  <link rel="stylesheet" href="/css/login.css" />
 </head>
 <body>
 
@@ -23,7 +18,7 @@
 
   <!-- ── Left Hero Panel ── -->
   <aside class="login-hero">
-    <img src="assets/images/logo.png" alt="Sahjanand Logo" class="hero-logo" />
+    <img src="/assets/images/logo.svg" alt="Sahjanand Logo" class="hero-logo" />
     <h2 class="hero-brand">Sahjanand</h2>
     <p class="hero-tagline">सहजानन्द : विश्वासानन्द :</p>
     <div class="hero-divider"></div>
@@ -39,83 +34,146 @@
   <main class="login-form-panel">
     <div class="login-card">
 
-      <!-- Mobile logo (hidden on desktop) -->
-      <img src="assets/images/logo.png" alt="Sahjanand Logo" class="mobile-logo" />
+      <!-- Mobile logo -->
+      <img src="/assets/images/logo.svg" alt="Sahjanand Logo" class="mobile-logo" />
 
-      <div class="form-header">
-        <h1>Welcome to <span>Sahjanand</span></h1>
-        <p>Sign in to access your dashboard</p>
+      <!-- ── Tabs ── -->
+      <div class="auth-tabs">
+        <button class="tab-btn active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+        <button class="tab-btn" id="tabRegister" onclick="switchTab('register')">Register</button>
       </div>
 
-      <!-- Alert box -->
+      <!-- ── Alert box ── -->
       <div class="alert alert-error" id="alertBox" role="alert">
         <i class="fa-solid fa-circle-exclamation"></i>
         <span id="alertMsg">Invalid email or password.</span>
       </div>
+      <div class="alert alert-success" id="successBox" role="alert">
+        <i class="fa-solid fa-circle-check"></i>
+        <span id="successMsg">Account created! You can now sign in.</span>
+      </div>
 
+      <!-- ════════ LOGIN FORM ════════ -->
       <form id="loginForm" novalidate>
+        <div class="form-header">
+          <h1>Welcome back to <span>Sahjanand</span></h1>
+          <p>Sign in to access your dashboard</p>
+        </div>
 
         <!-- Email -->
-        <div class="form-group" id="emailGroup">
-          <label for="email">Email Address</label>
+        <div class="form-group" id="loginEmailGroup">
+          <label for="loginEmail">
+            <i class="fa-regular fa-envelope"></i> Email Address <span class="required">*</span>
+          </label>
           <div class="input-wrapper">
-            <i class="fa-regular fa-envelope input-icon"></i>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              placeholder="you@example.com"
-              autocomplete="email"
-              required
-            />
+            <input type="email" id="loginEmail" name="email"
+              placeholder="you@example.com" autocomplete="email" required />
           </div>
-          <span class="form-error" id="emailError">Please enter a valid email address.</span>
+          <span class="form-error">Please enter a valid email address.</span>
         </div>
 
         <!-- Password -->
-        <div class="form-group" id="passwordGroup">
-          <label for="password">Password</label>
+        <div class="form-group" id="loginPasswordGroup">
+          <label for="loginPassword">
+            <i class="fa-solid fa-lock"></i> Password <span class="required">*</span>
+          </label>
           <div class="input-wrapper">
-            <i class="fa-solid fa-lock input-icon"></i>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              placeholder="Enter your password"
-              autocomplete="current-password"
-              required
-            />
-            <button type="button" class="toggle-password" id="togglePwd" aria-label="Toggle password visibility">
+            <input type="password" id="loginPassword" name="password"
+              placeholder="Enter your password" autocomplete="current-password" required />
+            <button type="button" class="toggle-password" id="togglePwd" aria-label="Toggle password">
               <i class="fa-regular fa-eye" id="eyeIcon"></i>
             </button>
           </div>
-          <span class="form-error" id="passwordError">Password is required.</span>
+          <span class="form-error">Password is required.</span>
         </div>
 
-        <!-- Forgot Password -->
         <div class="forgot-link">
           <a href="/forgot-password">Forgot password?</a>
         </div>
 
-        <!-- Submit -->
         <button type="submit" class="btn-login" id="loginBtn">
-          <span class="btn-text">
-            <i class="fa-solid fa-right-to-bracket"></i> Sign In
-          </span>
+          <span class="btn-text"><i class="fa-solid fa-right-to-bracket"></i> Sign In</span>
           <span class="btn-spinner"></span>
         </button>
 
+        <p class="switch-link">Don't have an account?
+          <a href="#" onclick="switchTab('register');return false;">Register here</a>
+        </p>
       </form>
 
-      <div class="login-footer">
-        &copy; 2026 Sahjanand. All rights reserved.
-      </div>
+      <!-- ════════ REGISTER FORM ════════ -->
+      <form id="registerForm" novalidate style="display:none;">
+        <div class="form-header">
+          <h1>Create your <span>account</span></h1>
+          <p>Join Sahjanand today</p>
+        </div>
 
+        <!-- Full Name -->
+        <div class="form-group" id="regNameGroup">
+          <label for="regName">
+            <i class="fa-solid fa-user"></i> Full Name
+          </label>
+          <div class="input-wrapper">
+            <input type="text" id="regName" name="full_name"
+              placeholder="Your full name" autocomplete="name" />
+          </div>
+        </div>
+
+        <!-- Email -->
+        <div class="form-group" id="regEmailGroup">
+          <label for="regEmail">
+            <i class="fa-regular fa-envelope"></i> Email Address <span class="required">*</span>
+          </label>
+          <div class="input-wrapper">
+            <input type="email" id="regEmail" name="email"
+              placeholder="you@example.com" autocomplete="email" required />
+          </div>
+          <span class="form-error">Please enter a valid email address.</span>
+        </div>
+
+        <!-- Password -->
+        <div class="form-group" id="regPasswordGroup">
+          <label for="regPassword">
+            <i class="fa-solid fa-lock"></i> Password <span class="required">*</span>
+          </label>
+          <div class="input-wrapper">
+            <input type="password" id="regPassword" name="password"
+              placeholder="Min. 6 characters" autocomplete="new-password" required />
+            <button type="button" class="toggle-password" id="toggleRegPwd" aria-label="Toggle password">
+              <i class="fa-regular fa-eye" id="eyeIconReg"></i>
+            </button>
+          </div>
+          <span class="form-error">Password must be at least 6 characters.</span>
+        </div>
+
+        <!-- Confirm Password -->
+        <div class="form-group" id="regConfirmGroup">
+          <label for="regConfirm">
+            <i class="fa-solid fa-lock"></i> Confirm Password <span class="required">*</span>
+          </label>
+          <div class="input-wrapper">
+            <input type="password" id="regConfirm" name="confirm_password"
+              placeholder="Repeat your password" autocomplete="new-password" required />
+          </div>
+          <span class="form-error">Passwords do not match.</span>
+        </div>
+
+        <button type="submit" class="btn-login" id="registerBtn">
+          <span class="btn-text"><i class="fa-solid fa-user-plus"></i> Create Account</span>
+          <span class="btn-spinner"></span>
+        </button>
+
+        <p class="switch-link">Already have an account?
+          <a href="#" onclick="switchTab('login');return false;">Sign in</a>
+        </p>
+      </form>
+
+      <div class="login-footer">&copy; 2026 Sahjanand. All rights reserved.</div>
     </div>
   </main>
 
 </div>
 
-<script src="js/login.js"></script>
+<script src="/js/login.js"></script>
 </body>
 </html>

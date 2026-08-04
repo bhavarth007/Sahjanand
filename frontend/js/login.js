@@ -1,71 +1,139 @@
-const API = 'http://localhost:8000';
+const API = '';  // empty = same origin (localhost:8000 serves both)
 
-// ── If already logged in, go straight to dashboard ──────
+// ── Already logged in → go to dashboard ─────────────────
 if (localStorage.getItem('sahjanand_token')) {
   window.location.replace('/dashboard');
 }
 
-// ── Password visibility toggle ───────────────────────────
+// ── Tab switching ────────────────────────────────────────
+function switchTab(tab) {
+  const isLogin = tab === 'login';
+
+  document.getElementById('loginForm').style.display    = isLogin ? 'block' : 'none';
+  document.getElementById('registerForm').style.display = isLogin ? 'none'  : 'block';
+
+  document.getElementById('tabLogin').classList.toggle('active',    isLogin);
+  document.getElementById('tabRegister').classList.toggle('active', !isLogin);
+
+  // Clear alerts
+  document.getElementById('alertBox').classList.remove('show');
+  document.getElementById('successBox').classList.remove('show');
+}
+
+// ── Password visibility ──────────────────────────────────
 document.getElementById('togglePwd').addEventListener('click', () => {
-  const input = document.getElementById('password');
+  const input = document.getElementById('loginPassword');
   const icon  = document.getElementById('eyeIcon');
   const hidden = input.type === 'password';
-  input.type      = hidden ? 'text' : 'password';
-  icon.className  = hidden ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+  input.type     = hidden ? 'text' : 'password';
+  icon.className = hidden ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
 });
 
-// ── Form submit ──────────────────────────────────────────
+document.getElementById('toggleRegPwd').addEventListener('click', () => {
+  const input = document.getElementById('regPassword');
+  const icon  = document.getElementById('eyeIconReg');
+  const hidden = input.type === 'password';
+  input.type     = hidden ? 'text' : 'password';
+  icon.className = hidden ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+});
+
+// ── Helpers ──────────────────────────────────────────────
+function showError(msg) {
+  const box = document.getElementById('alertBox');
+  document.getElementById('alertMsg').textContent = msg;
+  box.classList.add('show');
+  document.getElementById('successBox').classList.remove('show');
+}
+
+function showSuccess(msg) {
+  const box = document.getElementById('successBox');
+  document.getElementById('successMsg').textContent = msg;
+  box.classList.add('show');
+  document.getElementById('alertBox').classList.remove('show');
+}
+
+function clearErrors() {
+  document.querySelectorAll('.form-group').forEach(g => g.classList.remove('has-error'));
+  document.getElementById('alertBox').classList.remove('show');
+  document.getElementById('successBox').classList.remove('show');
+}
+
+function setError(groupId) {
+  document.getElementById(groupId)?.classList.add('has-error');
+}
+
+// ── LOGIN ────────────────────────────────────────────────
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  clearErrors();
 
-  const email    = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
+  const email    = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
   const btn      = document.getElementById('loginBtn');
-  const alertBox = document.getElementById('alertBox');
-  const alertMsg = document.getElementById('alertMsg');
 
-  // Reset errors
-  alertBox.classList.remove('show');
-  document.getElementById('emailGroup').classList.remove('has-error');
-  document.getElementById('passwordGroup').classList.remove('has-error');
-
-  // Validate
   let valid = true;
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    document.getElementById('emailGroup').classList.add('has-error');
-    valid = false;
-  }
-  if (!password) {
-    document.getElementById('passwordGroup').classList.add('has-error');
-    valid = false;
-  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('loginEmailGroup');    valid = false; }
+  if (!password)                                             { setError('loginPasswordGroup'); valid = false; }
   if (!valid) return;
 
   btn.classList.add('loading');
 
   try {
-    const response = await fetch(`${API}/api/auth/login`, {
+    const res  = await fetch(`${API}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
+    const data = await res.json();
 
-    const data = await response.json();
+    if (!res.ok) throw new Error(data.detail || 'Invalid email or password.');
 
-    if (!response.ok) {
-      throw new Error(data.detail || 'Invalid email or password.');
-    }
-
-    // Save session
     localStorage.setItem('sahjanand_token', data.access_token);
     localStorage.setItem('sahjanand_user', JSON.stringify(data.user));
-
-    // Go to dashboard — Sales section loads by default
     window.location.replace('/dashboard');
 
   } catch (err) {
-    alertMsg.textContent = err.message || 'Something went wrong. Please try again.';
-    alertBox.classList.add('show');
+    showError(err.message || 'Something went wrong. Please try again.');
+    btn.classList.remove('loading');
+  }
+});
+
+// ── REGISTER ─────────────────────────────────────────────
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearErrors();
+
+  const fullName  = document.getElementById('regName').value.trim();
+  const email     = document.getElementById('regEmail').value.trim();
+  const password  = document.getElementById('regPassword').value;
+  const confirm   = document.getElementById('regConfirm').value;
+  const btn       = document.getElementById('registerBtn');
+
+  let valid = true;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('regEmailGroup');    valid = false; }
+  if (!password || password.length < 6)                     { setError('regPasswordGroup'); valid = false; }
+  if (!confirm || confirm !== password)                      { setError('regConfirmGroup');  valid = false; }
+  if (!valid) return;
+
+  btn.classList.add('loading');
+
+  try {
+    const res  = await fetch(`${API}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, full_name: fullName }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detail || 'Registration failed. Please try again.');
+
+    showSuccess('Account created successfully! You can now sign in.');
+    document.getElementById('registerForm').reset();
+    setTimeout(() => switchTab('login'), 2000);
+
+  } catch (err) {
+    showError(err.message || 'Registration failed. Please try again.');
+  } finally {
     btn.classList.remove('loading');
   }
 });
