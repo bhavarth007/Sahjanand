@@ -34,25 +34,6 @@ async def seed():
             await db.refresh(admin)
             print("✅ Admin user created: admin@gmail.com / admin")
 
-        # ── Default Sales Chat Group ──
-        gq = await db.execute(select(ChatGroup).where(ChatGroup.name == "Sales Chat"))
-        group = gq.scalar_one_or_none()
-        if not group:
-            group = ChatGroup(name="Sales Chat", created_by=admin.id)
-            db.add(group)
-            await db.flush()
-            await db.refresh(group)
-            print("✅ Sales Chat group created.")
-
-        # ── Ensure admin is member of Sales Chat Group ──
-        mq = await db.execute(
-            select(GroupMember).where(GroupMember.group_id == group.id, GroupMember.user_id == admin.id)
-        )
-        if not mq.scalar_one_or_none():
-            db.add(GroupMember(group_id=group.id, user_id=admin.id, added_by=admin.id))
-            await db.flush()
-            print("✅ Admin added to Sales Group.")
-
         await db.commit()
         print("✅ Seed complete.")
 

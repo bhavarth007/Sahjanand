@@ -613,53 +613,27 @@
 /* ── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .chat-shell {
-    flex-direction: column;
     height: calc(100vh - 56px);
     border-radius: 0;
+    position: relative;
   }
 
   .chat-members {
-    width: 100%;
-    min-width: unset;
-    max-height: 90px;
-    overflow: hidden;
-    border-right: none;
-    border-bottom: 1px solid #e8e0d8;
-    flex-shrink: 0;
-    padding: 8px 12px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 260px;
+    z-index: 10;
+    background: #fff;
+    box-shadow: 2px 0 12px rgba(0,0,0,.15);
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    overflow-y: auto;
   }
 
-  .chat-members-header {
-    padding: 0 0 6px;
-    border-bottom: none;
-  }
-
-  .chat-members-header h4 {
-    font-size: .72rem;
-    margin-bottom: 4px;
-  }
-
-  .chat-member-search {
-    display: none;
-  }
-
-  .chat-group-list {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-
-  .chat-group-item {
-    white-space: nowrap;
-    font-size: .75rem;
-    padding: 5px 12px;
-    min-width: fit-content;
-    border-radius: 20px;
-  }
-
-  .chat-member-list {
-    display: none;
+  .chat-members.mobile-open {
+    transform: translateX(0);
   }
 
   .chat-admin-panel { display: none; }
@@ -667,10 +641,21 @@
   .chat-main {
     flex: 1;
     min-height: 0;
+    width: 100%;
   }
 
   .chat-header {
     padding: 8px 12px;
+    cursor: pointer;
+  }
+
+  .chat-header::before {
+    content: '\f0c9';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    margin-right: 10px;
+    font-size: .9rem;
+    color: var(--text-secondary, #6b5e54);
   }
 
   .chat-messages {
@@ -683,7 +668,7 @@
   }
 
   .chat-textarea {
-    font-size: .85rem;
+    font-size: 16px;
     padding: 8px 12px;
   }
 }

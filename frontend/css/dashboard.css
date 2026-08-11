@@ -1189,24 +1189,22 @@ tbody tr:hover td { background: var(--bg-light); }
 .dropdown-item-danger i { color: var(--primary); }
 .dropdown-item-danger:hover { background: #FFF0EE; }
 
-/* Hide username on small screens */
+/* Hide designation on small screens, show short name */
 @media (max-width: 768px) {
-  .topbar-user-info { display: none; }
+  .user-designation-topbar { display: none; }
   .profile-chevron { display: none; }
   .profile-btn {
-    padding: 3px;
-    border-radius: 50%;
-    border: 2px solid var(--primary);
-    width: 38px;
-    height: 38px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 4px 10px 4px 4px;
+    gap: 6px;
   }
   .profile-btn .user-avatar {
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     font-size: 0.7rem;
+  }
+  .user-name-topbar {
+    font-size: 0.78rem;
+    max-width: 70px;
   }
 }
 
