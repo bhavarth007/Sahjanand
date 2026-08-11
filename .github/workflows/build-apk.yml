@@ -27,6 +27,10 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
+      - name: Ensure Android project exists
+        working-directory: flutter_app
+        run: flutter create --platforms android --org com.sahjanand --project-name sahjanand .
+
       - name: Get dependencies
         working-directory: flutter_app
         run: flutter pub get
