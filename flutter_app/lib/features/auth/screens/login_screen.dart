@@ -74,7 +74,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
       child: Column(
         children: [
-          const SahjanandLogo(size: 80),
+          const SahjanandLogo(size: 160),
           const SizedBox(height: 40),
           _buildForm(),
         ],
@@ -91,37 +91,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           colors: [Color(0xFF1C0A04), Color(0xFF6B1208), AppColors.primary],
         ),
       ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(48),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SahjanandLogo(
-                size: 120,
-                textColor: Colors.white,
-              ),
-              const SizedBox(height: 40),
-              _featureItem(Icons.bar_chart_rounded, 'Sales Dashboard & Reports'),
-              _featureItem(Icons.notifications_active_rounded, 'Smart Reminders'),
-              _featureItem(Icons.inventory_2_rounded, 'Product Samples'),
-              _featureItem(Icons.cloud_upload_rounded, 'Cloud Image Storage'),
-            ],
-          ),
+      child: const Center(
+        child: SahjanandLogo(
+          size: 300,
+          textColor: Colors.white,
         ),
-      ),
-    );
-  }
-
-  Widget _featureItem(IconData icon, String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: AppColors.accent, size: 20),
-          const SizedBox(width: 12),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
-        ],
       ),
     );
   }

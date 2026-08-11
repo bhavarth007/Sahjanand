@@ -24,7 +24,7 @@ html, body {
 
 /* ── Hero Panel ── */
 .login-hero {
-  background: linear-gradient(145deg, #1C0A04 0%, #6B1208 50%, #C8290C 100%);
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -39,16 +39,15 @@ html, body {
   position: absolute;
   width: 500px; height: 500px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(245,166,35,0.18) 0%, transparent 70%);
+  background: none;
   top: -80px; right: -80px;
   pointer-events: none;
 }
 
 .hero-logo {
-  width: 150px;
-  height: 150px;
+  width: 350px;
+  height: 350px;
   object-fit: contain;
-  filter: drop-shadow(0 4px 24px rgba(245,166,35,0.5)) brightness(1.1);
   animation: float 4s ease-in-out infinite;
   position: relative; z-index: 1;
 }

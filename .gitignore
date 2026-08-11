@@ -23,6 +23,10 @@ backend/sahjanand.db
 backend/*.db
 backend/backups/*.db
 
+# Uploaded chat media (images, voice notes, videos)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
 # ══════════════════════════════
 #  Flutter / Dart
 # ══════════════════════════════

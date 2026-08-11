@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from pathlib import Path
 from app.database import init_db, close_db
-from app.routes import auth, sales, reminders, samples
+from app.routes import auth, sales, reminders, samples, chat as chat_router, admin as admin_router, group_reminders
 from app.config import get_settings
 
 import app.models.db_models  # noqa: F401
@@ -56,6 +56,10 @@ app.include_router(auth.router)
 app.include_router(sales.router)
 app.include_router(reminders.router)
 app.include_router(samples.router)
+app.include_router(chat_router.router)
+app.include_router(admin_router.router)
+app.include_router(group_reminders.router)
+app.include_router(group_reminders.global_reminder_router)
 
 
 @app.get("/health", tags=["Health"])
@@ -78,6 +82,12 @@ if FRONTEND_DIR.exists():
     app.mount("/css",    StaticFiles(directory=str(FRONTEND_DIR / "css")),    name="css")
     app.mount("/js",     StaticFiles(directory=str(FRONTEND_DIR / "js")),     name="js")
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+
+# ── Serve uploaded chat media ────────────────────────────
+from pathlib import Path as _Path
+_uploads_dir = _Path("uploads")
+_uploads_dir.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
 
 # ── HTML page routes ────────────────────────────────────

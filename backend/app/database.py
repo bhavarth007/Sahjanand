@@ -43,8 +43,21 @@ async def init_db():
     Used for local dev (SQLite) and initial deploy.
     In production, Alembic migrations handle schema changes.
     """
+    from sqlalchemy import text, inspect as sa_inspect
+
     async with engine.begin() as conn:
+        # Migrate: drop old group_reminders if it has old schema (missing remind_date column)
+        def _check_and_drop(sync_conn):
+            insp = sa_inspect(sync_conn)
+            if insp.has_table("group_reminders"):
+                cols = [c["name"] for c in insp.get_columns("group_reminders")]
+                if "remind_date" not in cols:
+                    sync_conn.execute(text("DROP TABLE group_reminders"))
+                    print("🔄 Migrated group_reminders table (schema update).")
+
+        await conn.run_sync(_check_and_drop)
         await conn.run_sync(Base.metadata.create_all)
+
     db_type = "SQLite (local dev)" if "sqlite" in db_url else "PostgreSQL (production)"
     print(f"✅ Database connected [{db_type}] — tables ready.")
 

@@ -5,7 +5,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     SECRET_KEY: str = "changeme-use-env"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours for dev convenience
 
     # Database — auto-detected:
     #   Local:      sqlite+aiosqlite:///./sahjanand.db

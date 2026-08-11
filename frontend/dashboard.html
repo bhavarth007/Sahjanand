@@ -9,6 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cinzel:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <link rel="stylesheet" href="/css/dashboard.css" />
+  <link rel="stylesheet" href="/css/chat.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body>
 
@@ -20,30 +22,33 @@
 ══════════════════════════════ -->
 <aside class="sidebar" id="sidebar">
   <a href="/dashboard" class="sidebar-brand">
-    <img src="/assets/images/logo.png" data-logo alt="Sahjanand" width="40" height="40" />
-    <div class="brand-text">
-      <span class="brand-name">Sahjanand</span>
-      <span class="brand-tagline">सहजानन्द : विश्वासानन्द :</span>
-    </div>
+    <img src="/assets/images/logo.png" data-logo alt="Sahjanand" width="220" height="220" />
   </a>
 
   <nav class="sidebar-nav">
     <div class="nav-section-label">Main Menu</div>
 
     <a href="#" class="nav-item active" data-section="sales" onclick="showSection('sales',this);return false;">
-      <i class="fa-solid fa-chart-line nav-icon"></i>
-      <span class="nav-label">Sales</span>
+      <i class="fa-solid fa-comments nav-icon"></i>
+      <span class="nav-label">Sales Chat</span>
     </a>
 
     <a href="#" class="nav-item" data-section="reminders" onclick="showSection('reminders',this);return false;">
       <i class="fa-solid fa-bell nav-icon"></i>
       <span class="nav-label">Reminders</span>
-      <span class="nav-badge" id="reminderBadge">3</span>
+      <span class="nav-badge" id="reminderBadge" style="display:none;">0</span>
     </a>
 
     <a href="#" class="nav-item" data-section="samples" onclick="showSection('samples',this);return false;">
       <i class="fa-solid fa-box-open nav-icon"></i>
       <span class="nav-label">Samples</span>
+    </a>
+
+    <!-- Admin-only section -->
+    <div class="nav-section-label" id="adminNavLabel" style="display:none;margin-top:16px;">Admin</div>
+    <a href="#" class="nav-item" id="adminNavItem" data-section="admin" onclick="showSection('admin',this);return false;" style="display:none">
+      <i class="fa-solid fa-user-shield nav-icon"></i>
+      <span class="nav-label">User Management</span>
     </a>
   </nav>
 
@@ -71,16 +76,19 @@
 
     <div class="topbar-right">
       <!-- Notification bell -->
-      <button class="topbar-icon-btn" title="Reminders" onclick="showSection('reminders',document.querySelector('[data-section=reminders]'))">
+      <button class="topbar-icon-btn" id="notifBellBtn" title="Reminders" onclick="handleNotifBellClick()">
         <i class="fa-regular fa-bell"></i>
-        <span class="notif-dot"></span>
+        <span class="notif-status-dot green" id="notifStatusDot"></span>
       </button>
 
       <!-- User profile button + dropdown -->
       <div class="profile-wrap" id="profileWrap">
         <button class="profile-btn" id="profileBtn" onclick="toggleProfileMenu()" aria-label="User menu">
           <div class="user-avatar" id="userAvatar">SJ</div>
-          <span class="user-name-topbar" id="userNameTopbar">Admin</span>
+          <div class="topbar-user-info">
+            <span class="user-name-topbar" id="userNameTopbar">Admin</span>
+            <span class="user-designation-topbar" id="userDesignationTopbar"></span>
+          </div>
           <i class="fa-solid fa-chevron-down profile-chevron" id="profileChevron"></i>
         </button>
 
@@ -109,70 +117,192 @@
   <!-- ── Page Content ── -->
   <div class="page-content">
 
-    <!-- ════════ SALES ════════ -->
+    <!-- ════════ SALES CHAT ════════ -->
     <section class="section active" id="section-sales">
-      <div class="greeting-bar">
-        <h2>Sales Overview</h2>
-        <p id="greetingText">Welcome back!</p>
+      <div class="chat-shell">
+
+        <!-- ── Left panel: Groups + All Users ── -->
+        <aside class="chat-members">
+          <div class="chat-members-header" style="padding-bottom:8px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <h4 style="margin:0;">Groups</h4>
+              <div style="display:flex;gap:4px;">
+                <button class="chat-icon-btn" id="chatDeleteGroupBtn" title="Delete Group" onclick="deleteGroupPrompt()" style="display:none">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+                <button class="chat-icon-btn" id="chatCreateGroupBtn" title="Create Group" style="display:none">
+                  <i class="fa-solid fa-plus"></i>
+                </button>
+              </div>
+            </div>
+            <div id="chatGroupList" class="chat-group-list"></div>
+          </div>
+          <div class="chat-members-header" style="border-top:1px solid #e8e0d8;padding-top:12px;">
+            <h4>All Users</h4>
+            <input class="chat-member-search" id="chatUserSearch" type="text" placeholder="Search users…" autocomplete="off" />
+          </div>
+          <div class="chat-member-list" id="chatUserList"></div>
+        </aside>
+
+        <!-- ── Middle: chat window ── -->
+        <div class="chat-main">
+          <div class="chat-header">
+            <div class="chat-header-avatar" style="cursor:pointer" title="Group Info" onclick="toggleGroupInfo()">
+              <i class="fa-solid fa-users" style="font-size:.95rem;"></i>
+            </div>
+            <div class="chat-header-info" style="cursor:pointer" onclick="toggleGroupInfo()">
+              <div class="chat-header-title" id="chatGroupTitle">Select a group</div>
+              <div class="chat-header-subtitle" id="chatOnlineCount"></div>
+            </div>
+            <div class="chat-header-actions"></div>
+          </div>
+
+          <div class="group-info-panel" id="chatGroupInfoPanel" style="display:none"></div>
+
+          <div class="chat-load-more" id="chatLoadMore" style="display:none">
+            <button>Load earlier messages</button>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-empty">
+              <i class="fa-regular fa-comments"></i>
+              <p>Select a group to start chatting</p>
+            </div>
+          </div>
+
+          <div class="chat-typing-bar" id="chatTypingBar"></div>
+
+          <div class="chat-input-bar" id="chatInputBar">
+            <button class="chat-attach-btn" title="Send image" onclick="document.getElementById('chatImageInput').click()">
+              <i class="fa-solid fa-image"></i>
+            </button>
+            <button class="chat-attach-btn" title="Send video" onclick="document.getElementById('chatVideoInput').click()">
+              <i class="fa-solid fa-video"></i>
+            </button>
+            <input type="file" id="chatImageInput" class="chat-file-input" accept="image/jpeg,image/png,image/gif,image/webp" />
+            <input type="file" id="chatVideoInput" class="chat-file-input" accept="video/mp4,video/webm,video/quicktime" />
+
+            <div class="chat-input-wrap">
+              <textarea class="chat-textarea" id="chatTextarea" rows="1" placeholder="Type a message… (@ to mention)"></textarea>
+              <div class="mention-popup" id="chatMentionPopup" style="display:none"></div>
+            </div>
+
+            <button class="chat-record-btn" id="chatRecordBtn" title="Record voice note">
+              <i class="fa-solid fa-microphone"></i>
+            </button>
+            <button class="chat-send-btn" id="chatSendBtn" title="Send message">
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
+          </div>
+
+          <div class="chat-muted-bar" id="chatMutedBar" style="display:none">
+            <i class="fa-solid fa-microphone-slash"></i>
+            You have been muted by an admin. You can still read messages.
+          </div>
+
+        </div>
       </div>
 
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-icon red"><i class="fa-solid fa-indian-rupee-sign"></i></div>
-          <div class="stat-info">
-            <div class="stat-label">Total Revenue</div>
-            <div class="stat-value" id="statRevenue">₹0</div>
-            <div class="stat-change up"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
+      <!-- ══ REMINDERS ═══════════════════════════════════════ -->
+      <div class="group-reminders-section" id="chatRemindersPanel">
+        <div class="chat-reminders-header">
+          <h3 style="margin:0;font-size:1rem;font-weight:700;"><i class="fa-solid fa-bell" style="color:var(--primary);margin-right:8px;"></i>Reminders</h3>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="chat-reminders-tabs">
+              <button class="reminder-tab active" id="tabPending" onclick="switchReminderTab('pending')">
+                <i class="fa-solid fa-clock"></i> Pending
+              </button>
+              <button class="reminder-tab" id="tabHistory" onclick="switchReminderTab('history')">
+                <i class="fa-solid fa-history"></i> History
+              </button>
+            </div>
+            <button class="btn-primary" id="addReminderBtn" onclick="openReminderForm()" style="padding:6px 14px;font-size:.8rem;">
+              <i class="fa-solid fa-plus"></i> New Reminder
+            </button>
           </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-icon orange"><i class="fa-solid fa-bag-shopping"></i></div>
-          <div class="stat-info">
-            <div class="stat-label">Total Orders</div>
-            <div class="stat-value" id="statOrders">0</div>
-            <div class="stat-change up"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
+
+        <!-- Filter bar -->
+        <div class="reminder-filter-bar" id="reminderFilterBar">
+          <input type="text" id="filterTitle" placeholder="Filter by title…" class="reminder-input" style="max-width:180px;" oninput="applyFilter()" />
+          <input type="text" id="filterUser" placeholder="@person name" class="reminder-input" style="max-width:180px;" oninput="applyFilter()" />
+          <button class="btn-secondary" onclick="setDefaultFilter()" style="padding:5px 10px;font-size:.72rem;" title="Save as default filter">
+            <i class="fa-solid fa-thumbtack"></i> Set Default
+          </button>
+          <span id="filterDefaultBadge" class="filter-badge default" style="display:none" title="Default filter active">
+            Default <button onclick="removeDefaultFilter()" style="border:none;background:none;color:inherit;cursor:pointer;font-size:.7rem;margin-left:4px;">✕</button>
+          </span>
+          <span id="filterActiveBadge" class="filter-badge" style="display:none">
+            Filtered <button onclick="clearFilter()" style="border:none;background:none;color:inherit;cursor:pointer;font-size:.7rem;margin-left:4px;">✕</button>
+          </span>
+        </div>
+
+        <!-- Create/Edit reminder form -->
+        <div class="reminder-form" id="reminderForm" style="display:none">
+          <h5 id="reminderFormTitle" style="margin:0 0 12px;font-size:.9rem;font-weight:700;color:var(--text-primary);">New Reminder</h5>
+          <div class="reminder-form-row">
+            <div class="reminder-field">
+              <label>Title</label>
+              <input type="text" id="reminderName" placeholder="e.g. Maruti Sales follow up" class="reminder-input" />
+            </div>
+            <div class="reminder-field">
+              <label>Reminder To</label>
+              <div id="reminderToContainer">
+                <select id="reminderTo" class="reminder-input">
+                  <option value="">-- Select user --</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="reminder-form-row">
+            <div class="reminder-field">
+              <label>Date</label>
+              <input type="date" id="reminderDate" class="reminder-input" min="" />
+            </div>
+            <div class="reminder-field">
+              <label>Time</label>
+              <input type="time" id="reminderTime" class="reminder-input" step="60" />
+            </div>
+            <div class="reminder-field">
+              <label>Status</label>
+              <select id="reminderStatus" class="reminder-input">
+                <option value="set">Set</option>
+                <option value="not_set">Not Set</option>
+              </select>
+            </div>
+          </div>
+          <div class="reminder-form-row">
+            <div class="reminder-field" style="flex:1;">
+              <label>Description</label>
+              <textarea id="reminderDesc" class="reminder-input" rows="2" placeholder="Add notes…" style="resize:vertical;"></textarea>
+            </div>
+          </div>
+          <div class="reminder-form-row" style="align-items:center;">
+            <button class="chat-attach-btn" title="Attach image" onclick="document.getElementById('reminderFileInput').click()" style="flex-shrink:0;">
+              <i class="fa-solid fa-paperclip"></i>
+            </button>
+            <button class="chat-record-btn" id="reminderVoiceBtn" title="Record voice note" onclick="toggleReminderVoice()" style="flex-shrink:0;">
+              <i class="fa-solid fa-microphone"></i>
+            </button>
+            <input type="file" id="reminderFileInput" style="display:none" accept="image/*,audio/*,.mp3,.ogg,.wav,.webm" onchange="uploadReminderMedia(this)" />
+            <input type="hidden" id="reminderMediaUrl" value="" />
+            <input type="hidden" id="reminderMediaName" value="" />
+            <span id="reminderMediaInfo" style="font-size:.78rem;color:#667781;"></span>
+            <div style="margin-left:auto;display:flex;gap:8px;">
+              <button type="button" class="btn-secondary" onclick="closeReminderForm()" style="padding:8px 16px;font-size:.82rem;">Cancel</button>
+              <button type="button" class="btn-primary" onclick="saveReminder()" style="padding:8px 16px;font-size:.82rem;">
+                <i class="fa-solid fa-check"></i> Save
+              </button>
+            </div>
           </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-icon green"><i class="fa-solid fa-users"></i></div>
-          <div class="stat-info">
-            <div class="stat-label">Customers</div>
-            <div class="stat-value" id="statCustomers">0</div>
-            <div class="stat-change up"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon blue"><i class="fa-solid fa-boxes-stacked"></i></div>
-          <div class="stat-info">
-            <div class="stat-label">Samples Sent</div>
-            <div class="stat-value" id="statSamples">0</div>
-            <div class="stat-change up"><i class="fa-solid fa-arrow-trend-up"></i> —</div>
-          </div>
+
+        <!-- Reminder list -->
+        <div class="reminder-list" id="reminderList">
+          <div class="reminder-empty">Select a group to see reminders</div>
         </div>
       </div>
 
-      <div class="section-header">
-        <h3><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary);margin-right:8px;"></i>Recent Sales</h3>
-        <button class="btn-primary"><i class="fa-solid fa-plus"></i> Add Sale</button>
-      </div>
-
-      <div class="card">
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr><th>#</th><th>Customer</th><th>Product</th><th>Amount</th><th>Date</th><th>Status</th></tr>
-            </thead>
-            <tbody id="salesTableBody">
-              <tr><td colspan="6">
-                <div class="empty-state">
-                  <i class="fa-solid fa-chart-bar"></i>
-                  <p>No sales data yet. Click "Add Sale" to get started.</p>
-                </div>
-              </td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
     </section>
 
     <!-- ════════ REMINDERS ════════ -->
@@ -181,35 +311,64 @@
         <h2>Reminders</h2>
         <p>Stay on top of your tasks and follow-ups.</p>
       </div>
-      <div class="section-header">
-        <h3><i class="fa-solid fa-bell" style="color:var(--accent-dark);margin-right:8px;"></i>Upcoming Reminders</h3>
-        <button class="btn-primary"><i class="fa-solid fa-plus"></i> Add Reminder</button>
+
+      <!-- Tabs: Pending / History + New Reminder button -->
+      <div class="reminders-page-tabs">
+        <button class="rp-tab active" id="rpTabPending" onclick="switchRemindersPageTab('pending')">
+          <i class="fa-solid fa-clock"></i> Pending
+        </button>
+        <button class="rp-tab" id="rpTabHistory" onclick="switchRemindersPageTab('history')">
+          <i class="fa-solid fa-history"></i> History
+        </button>
+        <button class="btn-primary rp-new-btn" onclick="openRpNewReminder()">
+          <i class="fa-solid fa-plus"></i> New Reminder
+        </button>
       </div>
-      <div class="reminder-grid" id="reminderGrid">
-        <div class="reminder-card">
-          <div class="reminder-icon"><i class="fa-solid fa-phone"></i></div>
-          <div class="reminder-body">
-            <h4>Follow up with client</h4>
-            <p>Call Ramesh regarding sample delivery confirmation.</p>
-            <div class="reminder-time"><i class="fa-regular fa-clock"></i> Today, 3:00 PM</div>
+
+      <!-- Filters -->
+      <div class="rp-filters">
+        <input type="text" id="rpFilterTitle" class="rp-filter-input" placeholder="Filter by title..." oninput="applyRpFilters()" />
+        <input type="text" id="rpFilterPerson" class="rp-filter-input" placeholder="@person name" oninput="applyRpFilters()" />
+      </div>
+
+      <!-- New Reminder Form (hidden by default) -->
+      <div class="rp-form-panel" id="rpFormPanel" style="display:none;">
+        <h4 class="rp-form-title">New Reminder</h4>
+        <div class="rp-form-row">
+          <div class="rp-form-field" style="flex:2;">
+            <label>Title</label>
+            <input type="text" id="rpReminderName" class="rp-filter-input" placeholder="e.g. Follow up with client" style="width:100%;" />
+          </div>
+          <div class="rp-form-field" style="flex:1;">
+            <label>Reminder To</label>
+            <div id="rpReminderToContainer"></div>
           </div>
         </div>
-        <div class="reminder-card">
-          <div class="reminder-icon"><i class="fa-solid fa-truck"></i></div>
-          <div class="reminder-body">
-            <h4>Dispatch order #1042</h4>
-            <p>Ensure samples are packed and ready for dispatch.</p>
-            <div class="reminder-time"><i class="fa-regular fa-clock"></i> Tomorrow, 10:00 AM</div>
+        <div class="rp-form-row">
+          <div class="rp-form-field">
+            <label>Date</label>
+            <input type="date" id="rpReminderDate" class="rp-filter-input" style="width:100%;" min="" />
+          </div>
+          <div class="rp-form-field">
+            <label>Time</label>
+            <input type="time" id="rpReminderTime" class="rp-filter-input" style="width:100%;" step="60" />
           </div>
         </div>
-        <div class="reminder-card">
-          <div class="reminder-icon"><i class="fa-solid fa-file-invoice"></i></div>
-          <div class="reminder-body">
-            <h4>Monthly invoice review</h4>
-            <p>Review and send invoices for the month of July.</p>
-            <div class="reminder-time"><i class="fa-regular fa-clock"></i> Aug 5, 2026</div>
+        <div class="rp-form-row">
+          <div class="rp-form-field" style="flex:1;">
+            <label>Description</label>
+            <textarea id="rpReminderDesc" class="rp-filter-input" rows="2" placeholder="Add notes..." style="width:100%;resize:vertical;"></textarea>
           </div>
         </div>
+        <div class="rp-form-actions">
+          <button class="rp-tab" onclick="closeRpNewReminder()">Cancel</button>
+          <button class="btn-primary" onclick="saveRpReminder()"><i class="fa-solid fa-check"></i> Save</button>
+        </div>
+      </div>
+
+      <!-- Card grid -->
+      <div class="reminder-cards-grid" id="reminderCardsGrid">
+        <div class="reminder-cards-empty">Click on a tab to load reminders</div>
       </div>
     </section>
 
@@ -264,12 +423,149 @@
           </button>
         </div>
       </div>
+
+      <!-- ── Admin: User List (CRUD) — only visible to admins ── -->
+      <div class="card admin-crud-panel" id="adminCrudPanel" style="display:none;padding:28px;margin-top:24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+          <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text-primary);">
+            <i class="fa-solid fa-users-gear" style="color:var(--primary);margin-right:8px;"></i>Manage Users
+          </h3>
+          <button class="btn-primary" onclick="openAddUserModal()">
+            <i class="fa-solid fa-user-plus"></i> Add User
+          </button>
+        </div>
+
+        <!-- User list table -->
+        <div class="admin-users-table-wrap">
+          <table class="admin-users-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Full Name</th>
+                <th>Email</th>
+                <th class="admin-th-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminCrudUsersBody">
+              <tr><td colspan="4">
+                <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Add/Edit User Modal ── -->
+      <div class="admin-modal-overlay" id="userModal" style="display:none">
+        <div class="admin-modal">
+          <div class="admin-modal-header">
+            <h4 id="userModalTitle">Add New User</h4>
+            <button class="chat-icon-btn" onclick="closeUserModal()"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+          <form id="userModalForm" onsubmit="submitUserForm(event)">
+            <div class="admin-modal-body">
+              <input type="hidden" id="userModalId" value="" />
+              <div class="admin-form-group">
+                <label>Full Name</label>
+                <input type="text" id="userModalName" placeholder="Enter full name" required />
+              </div>
+              <div class="admin-form-group">
+                <label>Designation</label>
+                <input type="text" id="userModalDesignation" placeholder="e.g. Sales Manager" />
+              </div>
+              <div class="admin-form-group">
+                <label>Email</label>
+                <input type="email" id="userModalEmail" placeholder="Enter email address" required />
+              </div>
+              <div class="admin-form-group">
+                <label id="userModalPwdLabel">Password</label>
+                <input type="password" id="userModalPassword" placeholder="Enter password" />
+              </div>
+            </div>
+            <div class="admin-modal-footer">
+              <button type="button" class="btn-secondary" onclick="closeUserModal()">Cancel</button>
+              <button type="submit" class="btn-primary" id="userModalSubmitBtn">
+                <i class="fa-solid fa-check"></i> Save
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ── Delete confirmation modal ── -->
+      <div class="admin-modal-overlay" id="deleteModal" style="display:none">
+        <div class="admin-modal" style="max-width:400px;">
+          <div class="admin-modal-header">
+            <h4>Delete User</h4>
+            <button class="chat-icon-btn" onclick="closeDeleteModal()"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+          <div class="admin-modal-body">
+            <p style="margin:0;font-size:.9rem;color:var(--text-primary)">
+              Are you sure you want to delete <strong id="deleteUserName"></strong>?
+              This will deactivate their account.
+            </p>
+          </div>
+          <div class="admin-modal-footer">
+            <button type="button" class="btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+            <button type="button" class="btn-danger" id="confirmDeleteBtn" onclick="confirmDeleteUser()">
+              <i class="fa-solid fa-trash"></i> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════ ADMIN: USER MANAGEMENT ════════ -->
+    <section class="section" id="section-admin">
+      <div class="greeting-bar">
+        <h2><i class="fa-solid fa-user-shield" style="margin-right:8px;color:var(--primary)"></i>User Management</h2>
+        <p>Manage user access rights. Control which sections each user can see.</p>
+      </div>
+
+      <div class="admin-users-panel">
+        <div class="admin-users-header">
+          <input type="text" class="admin-search-input" id="adminUserSearch"
+                 placeholder="Search users by name or email…" autocomplete="off" />
+        </div>
+
+        <div class="admin-users-table-wrap">
+          <table class="admin-users-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th class="admin-th-center">Sales</th>
+                <th class="admin-th-center">Reminders</th>
+                <th class="admin-th-center">Samples</th>
+                <th class="admin-th-center">Chat</th>
+                <th class="admin-th-center">Can Send</th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersBody">
+              <tr><td colspan="6">
+                <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading users…</p></div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
   </div>
 </div>
 
+<!-- ── Image lightbox (global, outside page-content) ── -->
+<div class="chat-lightbox" id="chatLightbox" onclick="closeLightbox()">
+  <span class="chat-lightbox-close" onclick="closeLightbox()">
+    <i class="fa-solid fa-xmark"></i>
+  </span>
+  <img id="chatLightboxImg" src="" alt="Full size" onclick="event.stopPropagation()" />
+</div>
+
 <script src="/js/logo.js"></script>
 <script src="/js/dashboard.js"></script>
+<script src="/js/chat.js"></script>
+<script src="/js/group_reminders.js"></script>
+<script src="/js/admin.js"></script>
 </body>
 </html>

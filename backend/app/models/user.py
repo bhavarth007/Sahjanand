@@ -18,6 +18,13 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     full_name: Optional[str] = None
+    designation: Optional[str] = None
+    is_admin: bool = False
+    chat_can_send: bool = True
+    can_view_sales: bool = True
+    can_view_reminders: bool = True
+    can_view_samples: bool = True
+    can_view_chat: bool = True
     created_at: datetime
 
     model_config = {"from_attributes": True}
