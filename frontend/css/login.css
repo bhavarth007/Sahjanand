@@ -17,9 +17,15 @@ html, body {
   grid-template-columns: 1fr 1fr;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .login-page { grid-template-columns: 1fr; }
-  .login-hero  { display: none; }
+  .login-hero  { display: none !important; }
+  .mobile-logo { display: block !important; }
+}
+
+@media (min-width: 901px) {
+  .mobile-logo { display: none !important; }
+  .login-hero  { display: flex !important; }
 }
 
 /* ── Hero Panel ── */
@@ -120,17 +126,16 @@ html, body {
   max-width: 420px;
 }
 
-/* Mobile logo */
+/* Mobile logo — only shows when hero panel is hidden */
 .mobile-logo {
   display: none;
-  width: 80px;
-  height: 80px;
+  width: 120px;
+  height: 120px;
   object-fit: contain;
-  margin: 0 auto 20px;
+  margin: 0 auto 24px;
 }
 
-@media (max-width: 768px) {
-  .mobile-logo { display: block; }
+@media (max-width: 900px) {
   .login-form-panel { padding: 32px 20px; }
 }
 
