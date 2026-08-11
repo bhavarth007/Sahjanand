@@ -32,17 +32,58 @@ html, body {
 }
 
 @media (max-width: 900px) {
-  .login-hero {
-    padding: 24px 20px 8px;
-    min-height: auto;
+  html, body {
+    background: #ffffff;
   }
+
+  .login-page {
+    min-height: 100vh;
+    background: #ffffff;
+  }
+
+  .login-hero {
+    padding: 28px 20px 12px;
+    min-height: auto;
+    background: #ffffff;
+  }
+
   .hero-logo {
-    width: 140px !important;
-    height: 140px !important;
+    width: 100% !important;
+    max-width: 280px !important;
+    height: auto !important;
     animation: none !important;
   }
+
   .login-form-panel {
-    padding: 12px 20px 32px;
+    flex: 1;
+    padding: 0 16px 24px;
+    background: #ffffff;
+  }
+
+  .login-card {
+    max-width: 100%;
+    background: #ffffff;
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+
+  .auth-tabs {
+    margin-bottom: 20px;
+  }
+
+  .form-header {
+    margin-bottom: 18px;
+  }
+
+  .form-header h1 {
+    font-size: 1.3rem;
+  }
+
+  .login-footer {
+    margin-top: 16px;
+    padding-bottom: 8px;
   }
 }
 
