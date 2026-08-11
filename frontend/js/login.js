@@ -84,7 +84,13 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    const data = await res.json();
+
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error('Server error. Please try again later.');
+    }
 
     if (!res.ok) throw new Error(data.detail || 'Invalid email or password.');
 
@@ -123,7 +129,13 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, full_name: fullName }),
     });
-    const data = await res.json();
+
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error('Server error. Please try again later.');
+    }
 
     if (!res.ok) throw new Error(data.detail || 'Registration failed. Please try again.');
 
