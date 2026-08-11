@@ -1,6 +1,6 @@
 ;(function() {
 'use strict';
-const CHAT_API = (typeof window.API !== 'undefined') ? window.API : 'http://localhost:8000';
+const CHAT_API = (typeof window.API !== 'undefined') ? window.API : (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '');
 
 // ── State ────────────────────────────────────────────────────────
 let chatWs = null, chatInitialized = false, chatEventsBound = false;

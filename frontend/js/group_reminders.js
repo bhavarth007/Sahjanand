@@ -1,6 +1,6 @@
 ;(function() {
 'use strict';
-const R_API = (typeof window.API !== 'undefined') ? window.API : 'http://localhost:8000';
+const R_API = (typeof window.API !== 'undefined') ? window.API : (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '');
 let currentRTab = 'pending';
 let editingReminderId = null;
 let reminderCheckInterval = null;

@@ -2,7 +2,7 @@
    admin.js  —  Admin User Management Panel
    ═══════════════════════════════════════════════════════════════ */
 
-const ADMIN_API = window.API || 'http://localhost:8000';
+const ADMIN_API = window.API || (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '');
 
 let adminUsers = [];
 let adminLoaded = false;

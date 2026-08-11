@@ -13,19 +13,35 @@ html, body {
 /* ── Layout ── */
 .login-page {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-@media (max-width: 900px) {
-  .login-page { grid-template-columns: 1fr; }
-  .login-hero  { display: none !important; }
-  .mobile-logo { display: block !important; }
+  display: flex;
+  flex-direction: column;
 }
 
 @media (min-width: 901px) {
-  .mobile-logo { display: none !important; }
-  .login-hero  { display: flex !important; }
+  .login-page {
+    flex-direction: row;
+  }
+  .login-hero {
+    width: 50%;
+    min-height: 100vh;
+    padding: 48px;
+  }
+  .login-form-panel {
+    width: 50%;
+  }
+}
+
+@media (max-width: 900px) {
+  .login-hero {
+    padding: 32px 20px 16px;
+  }
+  .hero-logo {
+    width: 160px !important;
+    height: 160px !important;
+  }
+  .login-form-panel {
+    padding: 16px 20px 32px;
+  }
 }
 
 /* ── Hero Panel ── */
@@ -124,19 +140,6 @@ html, body {
 .login-card {
   width: 100%;
   max-width: 420px;
-}
-
-/* Mobile logo — only shows when hero panel is hidden */
-.mobile-logo {
-  display: none;
-  width: 120px;
-  height: 120px;
-  object-fit: contain;
-  margin: 0 auto 24px;
-}
-
-@media (max-width: 900px) {
-  .login-form-panel { padding: 32px 20px; }
 }
 
 /* ── Auth Tabs ── */

@@ -1195,3 +1195,67 @@ tbody tr:hover td { background: var(--bg-light); }
   .user-designation-topbar { display: none; }
   .profile-btn { padding: 4px; border-radius: 50%; }
 }
+
+/* ══════════════════════════════
+   MOBILE FIXES
+══════════════════════════════ */
+@media (max-width: 600px) {
+  .topbar {
+    height: 56px;
+    padding: 0 12px;
+  }
+
+  .topbar-left { gap: 8px; }
+  .page-title { font-size: 0.95rem; }
+
+  .topbar-right { gap: 8px; }
+
+  .topbar-icon-btn {
+    width: 32px; height: 32px;
+    font-size: 0.85rem;
+  }
+
+  .profile-btn {
+    padding: 3px 8px 3px 3px;
+    gap: 6px;
+  }
+
+  .user-avatar {
+    width: 30px; height: 30px;
+    font-size: 0.7rem;
+  }
+
+  .user-name-topbar {
+    font-size: 0.75rem;
+    max-width: 80px;
+  }
+
+  .user-designation-topbar {
+    display: none;
+  }
+
+  .profile-chevron {
+    font-size: 0.6rem;
+  }
+
+  .notif-status-dot {
+    width: 8px; height: 8px;
+    top: 3px; right: 3px;
+  }
+
+  /* Profile section fixes */
+  .greeting-bar h2 { font-size: 1.2rem; }
+  .greeting-bar p { font-size: 0.85rem; }
+
+  /* Admin modal fixes */
+  .admin-modal {
+    width: 92vw !important;
+    max-width: 92vw !important;
+    margin: 16px;
+  }
+
+  .admin-modal-body input,
+  .admin-modal-body select {
+    font-size: 16px !important; /* prevents iOS zoom */
+  }
+}
