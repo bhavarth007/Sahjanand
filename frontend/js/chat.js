@@ -547,6 +547,11 @@ window.initChat=initChat; window.selectGroup=selectGroup; window.toggleGroupInfo
 window.openLightbox=openLightbox; window.closeLightbox=closeLightbox;
 window.insertMention=insertMention; window.deleteMessage=deleteMessage;
 window.addMemberToGroup=addMemberToGroup; window.removeMember=removeMember;
+// Expose refresh function for mobile app resume
+window.refreshChatMessages = function() {
+  const token = localStorage.getItem('sahjanand_token');
+  if (token && currentGroupId) loadMessages(token, currentGroupId);
+};
 window.renameGroup=renameGroup; window.createGroup=createGroup;
 window.deleteGroupPrompt=deleteGroupPrompt; window.deleteGroup=deleteGroup;
 })();

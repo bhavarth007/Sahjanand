@@ -39,7 +39,7 @@ class WebViewScreen extends StatefulWidget {
   State<WebViewScreen> createState() => _WebViewScreenState();
 }
 
-class _WebViewScreenState extends State<WebViewScreen> {
+class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserver {
   late final WebViewController _controller;
   bool _isLoading = true;
   bool _hasError = false;
@@ -48,6 +48,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -59,10 +60,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
             if (mounted) setState(() { _isLoading = false; _retryCount = 0; });
           },
           onWebResourceError: (error) {
-            // Only show error for main frame navigation failures
             if (error.isForMainFrame ?? true) {
               if (mounted) {
-                // Auto-retry up to 3 times (server might be waking up)
                 if (_retryCount < 3) {
                   _retryCount++;
                   Future.delayed(const Duration(seconds: 3), () {
@@ -77,6 +76,25 @@ class _WebViewScreenState extends State<WebViewScreen> {
         ),
       )
       ..loadRequest(Uri.parse(kProductionUrl));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // When app comes back from background, refresh the page to get latest messages
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Run JS to trigger chat refresh instead of full page reload
+      _controller.runJavaScript(
+        'if(typeof refreshChatMessages==="function")refreshChatMessages();'
+        'if(typeof updateReminderNavBadge==="function")updateReminderNavBadge();'
+        'if(typeof checkGlobalNewReminders==="function")checkGlobalNewReminders();'
+      );
+    }
   }
 
   void _retry() {
