@@ -19,6 +19,12 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Seed default admin user on startup
+    from app.seed import seed
+    try:
+        await seed()
+    except Exception as e:
+        print(f"⚠️ Seed skipped: {e}")
     yield
     await close_db()
 

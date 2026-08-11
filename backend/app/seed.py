@@ -10,8 +10,6 @@ from sqlalchemy import select
 
 
 async def seed():
-    await init_db()
-
     async with AsyncSessionLocal() as db:
         # ── Admin user ──
         result = await db.execute(select(User).where(User.email == "admin@gmail.com"))
@@ -59,5 +57,10 @@ async def seed():
         print("✅ Seed complete.")
 
 
+async def main():
+    await init_db()
+    await seed()
+
+
 if __name__ == "__main__":
-    asyncio.run(seed())
+    asyncio.run(main())
