@@ -31,6 +31,13 @@ jobs:
         working-directory: flutter_app
         run: |
           flutter create --platforms android --org com.sahjanand --project-name sahjanand .
+          # Set app display name to "Sahjanand"
+          sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/debug/AndroidManifest.xml || true
+          sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/profile/AndroidManifest.xml || true
+          # Add internet permission
+          sed -i 's/<manifest/<manifest xmlns:tools="http:\/\/schemas.android.com\/tools"/' android/app/src/main/AndroidManifest.xml || true
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>' android/app/src/main/AndroidManifest.xml || true
           flutter pub get
 
       - name: Build release APK

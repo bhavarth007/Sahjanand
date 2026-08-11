@@ -43,6 +43,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   late final WebViewController _controller;
   bool _isLoading = true;
   bool _hasError = false;
+  int _retryCount = 0;
 
   @override
   void initState() {
@@ -55,14 +56,32 @@ class _WebViewScreenState extends State<WebViewScreen> {
             if (mounted) setState(() { _isLoading = true; _hasError = false; });
           },
           onPageFinished: (_) {
-            if (mounted) setState(() => _isLoading = false);
+            if (mounted) setState(() { _isLoading = false; _retryCount = 0; });
           },
-          onWebResourceError: (_) {
-            if (mounted) setState(() { _hasError = true; _isLoading = false; });
+          onWebResourceError: (error) {
+            // Only show error for main frame navigation failures
+            if (error.isForMainFrame ?? true) {
+              if (mounted) {
+                // Auto-retry up to 3 times (server might be waking up)
+                if (_retryCount < 3) {
+                  _retryCount++;
+                  Future.delayed(const Duration(seconds: 3), () {
+                    if (mounted) _controller.loadRequest(Uri.parse(kProductionUrl));
+                  });
+                } else {
+                  setState(() { _hasError = true; _isLoading = false; });
+                }
+              }
+            }
           },
         ),
       )
       ..loadRequest(Uri.parse(kProductionUrl));
+  }
+
+  void _retry() {
+    setState(() { _hasError = false; _isLoading = true; _retryCount = 0; });
+    _controller.loadRequest(Uri.parse(kProductionUrl));
   }
 
   @override
@@ -76,33 +95,64 @@ class _WebViewScreenState extends State<WebViewScreen> {
         return true;
       },
       child: Scaffold(
+        backgroundColor: const Color(0xFFFFF9F5),
         body: SafeArea(
           child: Stack(
             children: [
               if (_hasError)
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.wifi_off_rounded, size: 64, color: Color(0xFFC8290C)),
-                      const SizedBox(height: 16),
-                      const Text('No Internet Connection', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: () => _controller.loadRequest(Uri.parse(kProductionUrl)),
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC8290C), foregroundColor: Colors.white),
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
+                _buildErrorView()
               else
                 WebViewWidget(controller: _controller),
-              if (_isLoading)
-                const LinearProgressIndicator(color: Color(0xFFC8290C)),
+              if (_isLoading) _buildLoadingView(),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingView() {
+    return Container(
+      color: const Color(0xFFFFF9F5),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset('assets/icon.png', width: 100, height: 100, errorBuilder: (_, __, ___) =>
+              const Icon(Icons.business, size: 64, color: Color(0xFFC8290C)),
+            ),
+            const SizedBox(height: 24),
+            const Text('Sahjanand', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC8290C))),
+            const SizedBox(height: 16),
+            const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(color: Color(0xFFC8290C), strokeWidth: 3)),
+            const SizedBox(height: 12),
+            Text(
+              _retryCount > 0 ? 'Server is waking up... ($_retryCount/3)' : 'Loading...',
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6B5E54)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.cloud_off_rounded, size: 64, color: Color(0xFFC8290C)),
+          const SizedBox(height: 16),
+          const Text('Could not connect to server', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          const Text('Please check your internet\nor try again in a moment.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF6B5E54))),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _retry,
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC8290C), foregroundColor: Colors.white),
+            child: const Text('Retry'),
+          ),
+        ],
       ),
     );
   }
