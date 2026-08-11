@@ -12,9 +12,6 @@ dependencies:
 
   # WebView to load live website
   webview_flutter: ^4.7.0
-
-  # UI
-  google_fonts: ^6.2.1
   connectivity_plus: ^6.0.3
 
 dev_dependencies:
