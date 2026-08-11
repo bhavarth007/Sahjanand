@@ -621,38 +621,41 @@
   .chat-members {
     width: 100%;
     min-width: unset;
-    max-height: 130px;
-    overflow-y: auto;
+    max-height: 90px;
+    overflow: hidden;
     border-right: none;
     border-bottom: 1px solid #e8e0d8;
     flex-shrink: 0;
+    padding: 8px 12px;
   }
 
   .chat-members-header {
-    padding: 10px 12px 8px;
+    padding: 0 0 6px;
+    border-bottom: none;
   }
 
   .chat-members-header h4 {
-    font-size: .78rem;
+    font-size: .72rem;
+    margin-bottom: 4px;
   }
 
   .chat-member-search {
-    padding: 6px 10px;
-    font-size: .8rem;
+    display: none;
   }
 
   .chat-group-list {
     display: flex;
     gap: 6px;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
   }
 
   .chat-group-item {
     white-space: nowrap;
-    font-size: .78rem;
-    padding: 6px 12px;
+    font-size: .75rem;
+    padding: 5px 12px;
     min-width: fit-content;
+    border-radius: 20px;
   }
 
   .chat-member-list {
@@ -664,6 +667,10 @@
   .chat-main {
     flex: 1;
     min-height: 0;
+  }
+
+  .chat-header {
+    padding: 8px 12px;
   }
 
   .chat-messages {
