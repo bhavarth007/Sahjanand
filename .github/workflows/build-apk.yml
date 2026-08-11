@@ -11,14 +11,14 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Flutter
@@ -26,37 +26,32 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+          cache: true
 
-      - name: Ensure Android project exists
+      - name: Create Android project
         working-directory: flutter_app
-        run: flutter create --platforms android --org com.sahjanand --project-name sahjanand .
+        run: |
+          flutter create --platforms android --org com.sahjanand --project-name sahjanand .
+          flutter pub get
 
-      - name: Get dependencies
+      - name: Build release APK
         working-directory: flutter_app
-        run: flutter pub get
+        run: flutter build apk --release --no-tree-shake-icons
 
-      - name: Build APK
-        working-directory: flutter_app
-        run: flutter build apk --release
-
-      - name: Upload APK as Artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sahjanand-app
+          name: sahjanand-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Sahjanand App v1.0.${{ github.run_number }}
+          name: Sahjanand v1.0.${{ github.run_number }}
           body: |
-            Sahjanand Android App - Auto-built from latest code.
-            
-            Install this APK on your Android phone.
-            The app loads the live server - any updates on the server reflect instantly without reinstalling.
-            
-            Login: admin@gmail.com / admin
+            Download and install this APK on your Android phone.
+            The app connects to the live server - updates happen automatically.
           files: flutter_app/build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

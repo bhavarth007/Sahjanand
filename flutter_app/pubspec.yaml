@@ -1,5 +1,5 @@
 name: sahjanand
-description: "Sahjanand — सहजानन्द : विश्वासानन्द :"
+description: "Sahjanand App"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,10 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # WebView to load live website
   webview_flutter: ^4.7.0
-  connectivity_plus: ^6.0.3
 
 dev_dependencies:
   flutter_test:
