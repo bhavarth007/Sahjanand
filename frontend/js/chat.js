@@ -550,27 +550,57 @@ window.addMemberToGroup=addMemberToGroup; window.removeMember=removeMember;
 // Expose refresh function for mobile app resume
 window.refreshChatMessages = function() {
   const token = localStorage.getItem('sahjanand_token');
-  if (token && currentGroupId) loadMessages(token, currentGroupId);
+  if (token && currentGroupId) pollNewMessages();
 };
 
 // ═══════════════════════════════════════════════════════════════
-// Auto-poll for new messages every 5 seconds (fallback for WS)
+// Live chat polling — fetch only NEW messages (no flicker)
 // ═══════════════════════════════════════════════════════════════
 let chatPollInterval = null;
+let _latestMsgId = 0;
+
 function startChatPolling() {
   if (chatPollInterval) return;
-  chatPollInterval = setInterval(() => {
-    if (!currentGroupId) return;
-    const token = localStorage.getItem('sahjanand_token');
-    if (!token) return;
-    // Only reload if WS is not connected
-    if (!chatWs || chatWs.readyState !== 1) {
-      loadMessages(token, currentGroupId);
-    }
-  }, 5000);
+  chatPollInterval = setInterval(pollNewMessages, 4000);
 }
+
+async function pollNewMessages() {
+  if (!currentGroupId) return;
+  const token = localStorage.getItem('sahjanand_token');
+  if (!token) return;
+  try {
+    let url = `${CHAT_API}/api/chat/groups/${currentGroupId}/messages?limit=20`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const msgs = await res.json();
+    if (!msgs.length) return;
+
+    // Find messages that are newer than what we already have
+    const existingIds = new Set();
+    document.querySelectorAll('[data-msg-id]').forEach(el => {
+      existingIds.add(parseInt(el.dataset.msgId));
+    });
+
+    // Get the latest ID we have on screen
+    let maxExisting = 0;
+    existingIds.forEach(id => { if (id > maxExisting) maxExisting = id; });
+
+    // Append only new messages
+    let addedNew = false;
+    msgs.forEach(m => {
+      if (!existingIds.has(m.id) && m.id > maxExisting) {
+        hideEmpty();
+        appendMsg(m, false);
+        addedNew = true;
+      }
+    });
+
+    if (addedNew) scrollBottom();
+  } catch(e) { /* silent */ }
+}
+
 // Start polling when chat initializes
-setTimeout(startChatPolling, 2000);
+setTimeout(startChatPolling, 3000);
 window.renameGroup=renameGroup; window.createGroup=createGroup;
 window.deleteGroupPrompt=deleteGroupPrompt; window.deleteGroup=deleteGroup;
 })();
