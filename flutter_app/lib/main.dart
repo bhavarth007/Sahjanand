@@ -51,9 +51,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (_) => setState(() { _isLoading = true; _hasError = false; }),
-          onPageFinished: (_) => setState(() => _isLoading = false),
-          onWebResourceError: (_) => setState(() { _hasError = true; _isLoading = false; }),
+          onPageStarted: (_) {
+            if (mounted) setState(() { _isLoading = true; _hasError = false; });
+          },
+          onPageFinished: (_) {
+            if (mounted) setState(() => _isLoading = false);
+          },
+          onWebResourceError: (_) {
+            if (mounted) setState(() { _hasError = true; _isLoading = false; });
+          },
         ),
       )
       ..loadRequest(Uri.parse(kProductionUrl));
@@ -61,12 +67,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (!didPop && await _controller.canGoBack()) {
+    return WillPopScope(
+      onWillPop: () async {
+        if (await _controller.canGoBack()) {
           await _controller.goBack();
+          return false;
         }
+        return true;
       },
       child: Scaffold(
         body: SafeArea(
