@@ -552,6 +552,25 @@ window.refreshChatMessages = function() {
   const token = localStorage.getItem('sahjanand_token');
   if (token && currentGroupId) loadMessages(token, currentGroupId);
 };
+
+// ═══════════════════════════════════════════════════════════════
+// Auto-poll for new messages every 5 seconds (fallback for WS)
+// ═══════════════════════════════════════════════════════════════
+let chatPollInterval = null;
+function startChatPolling() {
+  if (chatPollInterval) return;
+  chatPollInterval = setInterval(() => {
+    if (!currentGroupId) return;
+    const token = localStorage.getItem('sahjanand_token');
+    if (!token) return;
+    // Only reload if WS is not connected
+    if (!chatWs || chatWs.readyState !== 1) {
+      loadMessages(token, currentGroupId);
+    }
+  }, 5000);
+}
+// Start polling when chat initializes
+setTimeout(startChatPolling, 2000);
 window.renameGroup=renameGroup; window.createGroup=createGroup;
 window.deleteGroupPrompt=deleteGroupPrompt; window.deleteGroup=deleteGroup;
 })();

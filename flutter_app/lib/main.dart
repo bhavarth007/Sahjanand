@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 const String kProductionUrl = 'https://sahjanand-api.onrender.com';
 
@@ -76,6 +77,15 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
         ),
       )
       ..loadRequest(Uri.parse(kProductionUrl));
+
+    // Enable file upload and media permissions on Android
+    final androidController = _controller.platform;
+    if (androidController is AndroidWebViewController) {
+      androidController.setMediaPlaybackRequiresUserGesture(false);
+      androidController.setOnShowFileSelector((params) async {
+        return [];
+      });
+    }
   }
 
   @override
