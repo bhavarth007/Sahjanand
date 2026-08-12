@@ -779,21 +779,23 @@ async function checkGlobalUpcomingAlerts() {
       const diffMs = reminderTime - now;
       const diffSec = diffMs / 1000;
 
-      // Fire alert at 10 seconds before deadline
-      if (diffSec > 0 && diffSec <= 15) {
-        const alertKey = `reminder_10sec_alert_${r.id}`;
-        if (localStorage.getItem(alertKey)) return;
-        localStorage.setItem(alertKey, '1');
-        showGlobalReminderAlert(r, true);
-        sendBrowserNotification(r, 'Reminder NOW!');
-      }
-      // Fire alert when 2.5 min or less remain (but more than 15 sec)
-      else if (diffSec > 15 && diffSec <= 150) {
+      // Alert 1: At 2 minutes before deadline (120 sec)
+      if (diffSec > 0 && diffSec <= 125 && diffSec > 15) {
         const alertKey = `reminder_2min_alert_${r.id}`;
         if (localStorage.getItem(alertKey)) return;
         localStorage.setItem(alertKey, '1');
-        showGlobalReminderAlert(r, true);
+        showGlobalReminderAlert(r, false);
         sendBrowserNotification(r, 'Reminder in 2 minutes!');
+      }
+
+      // Alert 2: At exact deadline (last 15 sec) — with SOUND
+      if (diffSec > -5 && diffSec <= 15) {
+        const alertKey = `reminder_deadline_alert_${r.id}`;
+        if (localStorage.getItem(alertKey)) return;
+        localStorage.setItem(alertKey, '1');
+        showGlobalReminderAlert(r, true);
+        playGlobalAlertSound();
+        sendBrowserNotification(r, 'Reminder NOW!');
       }
     });
   } catch (e) { console.warn('[global-reminder] alert check failed', e); }
@@ -805,7 +807,7 @@ function sendBrowserNotification(r, title) {
     new Notification(title, {
       body: `${r.name} — ${r.remind_time}`,
       icon: '/assets/images/logo.png',
-      tag: `reminder_${r.id}`,
+      tag: `reminder_${r.id}_${title}`,
       requireInteraction: true,
     });
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 const String kProductionUrl = 'https://sahjanand-api.onrender.com';
 
@@ -50,6 +51,22 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _requestPermissions();
+    _initWebView();
+  }
+
+  Future<void> _requestPermissions() async {
+    await [
+      Permission.camera,
+      Permission.microphone,
+      Permission.storage,
+      Permission.notification,
+      Permission.photos,
+      Permission.videos,
+    ].request();
+  }
+
+  void _initWebView() {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -78,12 +95,12 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       )
       ..loadRequest(Uri.parse(kProductionUrl));
 
-    // Enable media permissions on Android
-    final androidController = _controller.platform;
-    if (androidController is AndroidWebViewController) {
-      androidController.setMediaPlaybackRequiresUserGesture(false);
-      // Request camera/mic permissions for WebRTC
-      androidController.setOnPlatformPermissionRequest((request) {
+    // Android-specific: grant all WebView permissions (camera, mic, etc.)
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      platform.setMediaPlaybackRequiresUserGesture(false);
+      // Grant camera/mic permission when WebView requests it
+      platform.setOnPlatformPermissionRequest((request) {
         request.grant();
       });
     }
@@ -95,11 +112,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     super.dispose();
   }
 
-  // When app comes back from background, refresh the page to get latest messages
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Run JS to trigger chat refresh instead of full page reload
       _controller.runJavaScript(
         'if(typeof refreshChatMessages==="function")refreshChatMessages();'
         'if(typeof updateReminderNavBadge==="function")updateReminderNavBadge();'
