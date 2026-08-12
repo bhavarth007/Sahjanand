@@ -752,13 +752,17 @@ let globalReminderInterval = null;
 
 function startGlobalReminderChecker() {
   if (globalReminderInterval) return;
+  // Request browser notification permission
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
   // Run immediately on load
   checkGlobalUpcomingAlerts();
   checkGlobalNewReminders();
-  // Then every 30 seconds
+  // Then every 10 seconds for precise alerts
   globalReminderInterval = setInterval(() => {
     checkGlobalUpcomingAlerts();
-  }, 30000);
+  }, 10000);
 }
 
 async function checkGlobalUpcomingAlerts() {
@@ -773,17 +777,38 @@ async function checkGlobalUpcomingAlerts() {
     items.forEach(r => {
       const reminderTime = new Date(`${r.remind_date}T${r.remind_time}`);
       const diffMs = reminderTime - now;
-      const diffMin = diffMs / 60000;
+      const diffSec = diffMs / 1000;
 
-      // Fire alert when 2.5 min or less remain (but still in future)
-      if (diffMin > 0 && diffMin <= 2.5) {
+      // Fire alert at 10 seconds before deadline
+      if (diffSec > 0 && diffSec <= 15) {
+        const alertKey = `reminder_10sec_alert_${r.id}`;
+        if (localStorage.getItem(alertKey)) return;
+        localStorage.setItem(alertKey, '1');
+        showGlobalReminderAlert(r, true);
+        sendBrowserNotification(r, 'Reminder NOW!');
+      }
+      // Fire alert when 2.5 min or less remain (but more than 15 sec)
+      else if (diffSec > 15 && diffSec <= 150) {
         const alertKey = `reminder_2min_alert_${r.id}`;
         if (localStorage.getItem(alertKey)) return;
         localStorage.setItem(alertKey, '1');
         showGlobalReminderAlert(r, true);
+        sendBrowserNotification(r, 'Reminder in 2 minutes!');
       }
     });
   } catch (e) { console.warn('[global-reminder] alert check failed', e); }
+}
+
+// Browser notification (works when tab is in background)
+function sendBrowserNotification(r, title) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, {
+      body: `${r.name} — ${r.remind_time}`,
+      icon: '/assets/images/logo.png',
+      tag: `reminder_${r.id}`,
+      requireInteraction: true,
+    });
+  }
 }
 
 async function checkGlobalNewReminders() {

@@ -78,12 +78,13 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       )
       ..loadRequest(Uri.parse(kProductionUrl));
 
-    // Enable file upload and media permissions on Android
+    // Enable media permissions on Android
     final androidController = _controller.platform;
     if (androidController is AndroidWebViewController) {
       androidController.setMediaPlaybackRequiresUserGesture(false);
-      androidController.setOnShowFileSelector((params) async {
-        return [];
+      // Request camera/mic permissions for WebRTC
+      androidController.setOnPlatformPermissionRequest((request) {
+        request.grant();
       });
     }
   }
