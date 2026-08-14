@@ -5,10 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as p;
 
 const String kProductionUrl = 'https://sahjanand-api.onrender.com';
 
@@ -171,50 +171,77 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
       if (action == 'pickFile') {
         final accept = data['accept'] as String? ?? '*/*';
-        final inputId = data['inputId'] as String? ?? '';
-        await _pickAndUploadFile(accept, inputId);
+        await _pickAndUploadFile(accept);
       } else if (action == 'recordAudio') {
-        await _recordAndUploadAudio();
+        await _toggleAudioRecording();
       }
     } catch (e) {
       debugPrint('[FlutterBridge] Error: $e');
     }
   }
 
-  // Pick file using native picker and upload to server
-  Future<void> _pickAndUploadFile(String accept, String inputId) async {
-    FilePickerResult? result;
-    
+  final AudioRecorder _recorder = AudioRecorder();
+  bool _isRecording = false;
+  String? _recordPath;
+
+  // Pick file and upload immediately
+  Future<void> _pickAndUploadFile(String accept) async {
+    final picker = ImagePicker();
+    List<XFile> files = [];
+
     if (accept.contains('image')) {
-      // Use image picker for better UX (camera option)
-      final picker = ImagePicker();
       final source = await _showImageSourceDialog();
       if (source == null) return;
-      
-      final XFile? image = source == ImageSource.camera
-          ? await picker.pickImage(source: ImageSource.camera)
-          : await picker.pickImage(source: ImageSource.gallery);
-      if (image == null) return;
-      await _uploadFileToServer(File(image.path), image.name);
-      return;
-    }
-    
-    if (accept.contains('video')) {
-      final picker = ImagePicker();
-      final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
-      if (video == null) return;
-      await _uploadFileToServer(File(video.path), video.name);
-      return;
+      if (source == ImageSource.camera) {
+        final img = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+        if (img != null) files.add(img);
+      } else {
+        final imgs = await picker.pickMultiImage(imageQuality: 80);
+        files.addAll(imgs);
+      }
+    } else if (accept.contains('video')) {
+      final video = await picker.pickVideo(source: ImageSource.gallery);
+      if (video != null) files.add(video);
+    } else {
+      // Generic - pick image or video
+      final img = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+      if (img != null) files.add(img);
     }
 
-    // Generic file picker
-    result = await FilePicker.platform.pickFiles(
-      type: FileType.any,
-      allowMultiple: false,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final file = File(result.files.single.path!);
-    await _uploadFileToServer(file, result.files.single.name);
+    if (files.isEmpty) return;
+
+    // Upload each file
+    for (final xfile in files) {
+      await _uploadAndSend(File(xfile.path), xfile.name);
+    }
+  }
+
+  // Toggle audio recording
+  Future<void> _toggleAudioRecording() async {
+    if (_isRecording) {
+      // Stop recording and send
+      final path = await _recorder.stop();
+      _isRecording = false;
+      if (path != null) {
+        final file = File(path);
+        await _uploadAndSend(file, 'voice_note.m4a');
+      }
+    } else {
+      // Start recording
+      final dir = await getTemporaryDirectory();
+      _recordPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      if (await _recorder.hasPermission()) {
+        await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: _recordPath!);
+        _isRecording = true;
+        // Show recording indicator in the page
+        _controller.runJavaScript('''
+          var btn = document.getElementById('chatRecordBtn');
+          if(btn) btn.style.background='#c0392b';
+          var btn2 = document.querySelector('.chat-record-btn');
+          if(btn2) btn2.style.background='#c0392b';
+        ''');
+      }
+    }
   }
 
   Future<ImageSource?> _showImageSourceDialog() async {
@@ -241,30 +268,16 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     );
   }
 
-  // Record audio natively
-  Future<void> _recordAndUploadAudio() async {
-    // For voice recording, show a simple dialog
-    // Since we can't easily do inline recording, we'll use file picker for audio
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: false,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final file = File(result.files.single.path!);
-    await _uploadFileToServer(file, result.files.single.name);
-  }
-
-  // Upload file to server and trigger JS callback
-  Future<void> _uploadFileToServer(File file, String fileName) async {
+  // Upload file to server and send as chat message
+  Future<void> _uploadAndSend(File file, String fileName) async {
     try {
-      // Get auth token from WebView
       final tokenResult = await _controller.runJavaScriptReturningResult(
         'localStorage.getItem("sahjanand_token")'
       );
       String token = tokenResult.toString().replaceAll('"', '');
       if (token == 'null' || token.isEmpty) return;
 
-      // Upload to server
+      // Upload
       final uri = Uri.parse('$kProductionUrl/api/chat/upload');
       final request = http.MultipartRequest('POST', uri)
         ..headers['Authorization'] = 'Bearer $token'
@@ -275,45 +288,46 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
         final respBody = await response.stream.bytesToString();
         final respData = jsonDecode(respBody);
         final mediaUrl = respData['url'] ?? respData['media_url'] ?? '';
-        
-        // Inject the uploaded file URL back into the page
+
+        // Send as chat message immediately
         _controller.runJavaScript('''
           (function() {
-            // Try to trigger the chat send with media
-            if (typeof window._lastMediaUpload === 'undefined') window._lastMediaUpload = {};
-            window._lastMediaUpload = {url: '$mediaUrl', name: '$fileName'};
+            var token = localStorage.getItem('sahjanand_token');
+            var gid = window.currentGroupId;
+            var api = window.API || '';
+            if (!gid || !token) return;
             
-            // Auto-send as chat media if in chat
-            if (window.currentGroupId) {
-              var ext = '$fileName'.split('.').pop().toLowerCase();
-              var msgType = 'image';
-              if (['mp4','mov','webm','avi'].indexOf(ext) >= 0) msgType = 'video';
-              if (['mp3','ogg','wav','m4a','webm'].indexOf(ext) >= 0) msgType = 'voice';
-              
-              var token = localStorage.getItem('sahjanand_token');
-              fetch(window.API + '/api/chat/groups/' + window.currentGroupId + '/messages', {
-                method: 'POST',
-                headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
-                body: JSON.stringify({msg_type: msgType, media_url: '$mediaUrl', media_name: '$fileName', content: ''})
-              }).then(function() {
-                if (typeof refreshChatMessages === 'function') refreshChatMessages();
-              });
-            }
+            var ext = '$fileName'.split('.').pop().toLowerCase();
+            var msgType = 'image';
+            if (['mp4','mov','webm','avi'].indexOf(ext) >= 0) msgType = 'video';
+            if (['mp3','ogg','wav','m4a','webm','aac'].indexOf(ext) >= 0) msgType = 'voice';
             
-            // Also set reminder media fields if they exist
+            fetch(api + '/api/chat/groups/' + gid + '/messages', {
+              method: 'POST',
+              headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+              body: JSON.stringify({msg_type: msgType, media_url: '$mediaUrl', media_name: '$fileName', content: ''})
+            }).then(function() {
+              if (typeof refreshChatMessages === 'function') refreshChatMessages();
+              // Reset record button color
+              var btn = document.getElementById('chatRecordBtn');
+              if(btn) btn.style.background='';
+              var btn2 = document.querySelector('.chat-record-btn');
+              if(btn2) btn2.style.background='';
+            });
+            
+            // Also set reminder media fields
             var rmUrl = document.getElementById('reminderMediaUrl');
+            if (rmUrl) rmUrl.value = '$mediaUrl';
             var rmName = document.getElementById('reminderMediaName');
+            if (rmName) rmName.value = '$fileName';
             var rmInfo = document.getElementById('reminderMediaInfo');
-            if (rmUrl) { rmUrl.value = '$mediaUrl'; }
-            if (rmName) { rmName.value = '$fileName'; }
-            if (rmInfo) { rmInfo.textContent = '📎 $fileName'; }
-            
+            if (rmInfo) rmInfo.textContent = '📎 $fileName';
             var rpUrl = document.getElementById('rpMediaUrl');
+            if (rpUrl) rpUrl.value = '$mediaUrl';
             var rpName = document.getElementById('rpMediaName');
+            if (rpName) rpName.value = '$fileName';
             var rpInfo = document.getElementById('rpMediaInfo');
-            if (rpUrl) { rpUrl.value = '$mediaUrl'; }
-            if (rpName) { rpName.value = '$fileName'; }
-            if (rpInfo) { rpInfo.textContent = '📎 $fileName'; }
+            if (rpInfo) rpInfo.textContent = '📎 $fileName';
           })();
         ''');
       }

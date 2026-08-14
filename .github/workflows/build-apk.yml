@@ -52,13 +52,13 @@ jobs:
 
       - name: Build release APK
         working-directory: flutter_app
-        run: flutter build apk --debug
+        run: flutter build apk --release --shrink
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: sahjanand-apk
-          path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -68,6 +68,6 @@ jobs:
           body: |
             Download and install this APK on your Android phone.
             The app connects to the live server - updates happen automatically.
-          files: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+          files: flutter_app/build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
