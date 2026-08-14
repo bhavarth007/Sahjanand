@@ -365,12 +365,23 @@ async function loadRemindersPage(tab) {
     const res = await fetch(`${API}/api/chat/my-all-reminders?tab=${t}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) { grid.innerHTML = '<div class="reminder-cards-empty">Failed to load reminders.</div>'; return; }
+    if (!res.ok) {
+      if (t === 'pending') {
+        showRpEmptyState(grid);
+      } else {
+        grid.innerHTML = '<div class="reminder-cards-empty">No history found.</div>';
+      }
+      return;
+    }
     rpAllItems = await res.json();
     applyRpFilters();
   } catch (e) {
     console.warn('[reminders-page]', e);
-    grid.innerHTML = '<div class="reminder-cards-empty">Error loading reminders.</div>';
+    if (t === 'pending') {
+      showRpEmptyState(grid);
+    } else {
+      grid.innerHTML = '<div class="reminder-cards-empty">No reminders yet.</div>';
+    }
   }
 
   // Start auto-refresh
@@ -568,6 +579,10 @@ async function openRpNewReminder() {
   document.getElementById('rpReminderDate').min = today;
   document.getElementById('rpReminderTime').value = '';
   document.getElementById('rpReminderDesc').value = '';
+  // Clear media
+  if (document.getElementById('rpMediaUrl')) document.getElementById('rpMediaUrl').value = '';
+  if (document.getElementById('rpMediaName')) document.getElementById('rpMediaName').value = '';
+  if (document.getElementById('rpMediaInfo')) document.getElementById('rpMediaInfo').textContent = '';
   // Load users for the multi-select
   await loadRpReminderUsers();
 }
@@ -667,6 +682,8 @@ async function saveRpReminder() {
     description: desc || null, status: 'set',
     remind_to_ids: remindToIds.length ? remindToIds : null,
     remind_to: remindToIds.length ? remindToIds[0] : null,
+    media_url: document.getElementById('rpMediaUrl')?.value || null,
+    media_name: document.getElementById('rpMediaName')?.value || null,
   };
 
   try {
@@ -686,6 +703,79 @@ async function saveRpReminder() {
 window.loadRemindersPage = loadRemindersPage;
 window.switchRemindersPageTab = switchRemindersPageTab;
 window.deleteReminderCard = deleteReminderCard;
+// ── Media upload for Reminders page ──
+async function uploadRpMedia(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  const infoEl = document.getElementById('rpMediaInfo');
+  if (infoEl) infoEl.textContent = 'Uploading...';
+  try {
+    const res = await fetch(`${API}/api/chat/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('rpMediaUrl').value = data.url || data.media_url || '';
+      document.getElementById('rpMediaName').value = file.name;
+      if (infoEl) infoEl.textContent = `📎 ${file.name}`;
+    } else {
+      if (infoEl) infoEl.textContent = 'Upload failed';
+    }
+  } catch {
+    if (infoEl) infoEl.textContent = 'Upload failed';
+  }
+  input.value = '';
+}
+
+let rpRecording = false, rpMediaRecorder = null, rpAudioChunks = [];
+function toggleRpVoice() {
+  if (rpRecording) { stopRpVoice(); return; }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    rpRecording = true;
+    const btn = document.getElementById('rpVoiceBtn');
+    if (btn) btn.style.background = '#c0392b';
+    rpMediaRecorder = new MediaRecorder(stream);
+    rpAudioChunks = [];
+    rpMediaRecorder.ondataavailable = e => rpAudioChunks.push(e.data);
+    rpMediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(rpAudioChunks, { type: 'audio/webm' });
+      const file = new File([blob], 'voice_note.webm', { type: 'audio/webm' });
+      const formData = new FormData();
+      formData.append('file', file);
+      const infoEl = document.getElementById('rpMediaInfo');
+      if (infoEl) infoEl.textContent = 'Uploading voice...';
+      try {
+        const res = await fetch(`${API}/api/chat/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('rpMediaUrl').value = data.url || data.media_url || '';
+          document.getElementById('rpMediaName').value = 'voice_note.webm';
+          if (infoEl) infoEl.textContent = '🎤 Voice note recorded';
+        }
+      } catch {}
+    };
+    rpMediaRecorder.start();
+  }).catch(() => alert('Microphone access denied. Please allow microphone permission.'));
+}
+
+function stopRpVoice() {
+  rpRecording = false;
+  const btn = document.getElementById('rpVoiceBtn');
+  if (btn) btn.style.background = '';
+  if (rpMediaRecorder && rpMediaRecorder.state === 'recording') rpMediaRecorder.stop();
+}
+
+window.uploadRpMedia = uploadRpMedia;
+window.toggleRpVoice = toggleRpVoice;
 window.applyRpFilters = applyRpFilters;
 window.openRpNewReminder = openRpNewReminder;
 window.closeRpNewReminder = closeRpNewReminder;

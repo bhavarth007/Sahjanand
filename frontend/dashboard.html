@@ -361,8 +361,22 @@
           </div>
         </div>
         <div class="rp-form-actions">
-          <button class="rp-tab" onclick="closeRpNewReminder()">Cancel</button>
-          <button class="btn-primary" onclick="saveRpReminder()"><i class="fa-solid fa-check"></i> Save</button>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="chat-attach-btn" title="Attach file" onclick="document.getElementById('rpFileInput').click()" style="flex-shrink:0;">
+              <i class="fa-solid fa-paperclip"></i>
+            </button>
+            <button class="chat-record-btn" id="rpVoiceBtn" title="Record voice" onclick="toggleRpVoice()" style="flex-shrink:0;">
+              <i class="fa-solid fa-microphone"></i>
+            </button>
+            <input type="file" id="rpFileInput" style="display:none" accept="image/*,audio/*,video/*" onchange="uploadRpMedia(this)" />
+            <input type="hidden" id="rpMediaUrl" value="" />
+            <input type="hidden" id="rpMediaName" value="" />
+            <span id="rpMediaInfo" style="font-size:.75rem;color:#667781;"></span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="rp-tab" onclick="closeRpNewReminder()">Cancel</button>
+            <button class="btn-primary" onclick="saveRpReminder()"><i class="fa-solid fa-check"></i> Save</button>
+          </div>
         </div>
       </div>
 
