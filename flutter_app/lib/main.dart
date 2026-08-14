@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -46,28 +47,42 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   bool _isLoading = true;
   bool _hasError = false;
   int _retryCount = 0;
+  bool _permissionsReady = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _requestPermissions();
+    _initAll();
+  }
+
+  Future<void> _initAll() async {
+    // Request ALL permissions upfront before loading WebView
+    await _requestPermissions();
+    setState(() => _permissionsReady = true);
     _initWebView();
   }
 
   Future<void> _requestPermissions() async {
-    await [
-      Permission.camera,
-      Permission.microphone,
-      Permission.storage,
-      Permission.notification,
-      Permission.photos,
-      Permission.videos,
-    ].request();
+    await Permission.camera.request();
+    await Permission.microphone.request();
+    await Permission.storage.request();
+    await Permission.notification.request();
+    if (Platform.isAndroid) {
+      await Permission.photos.request();
+      await Permission.videos.request();
+    }
   }
 
   void _initWebView() {
-    _controller = WebViewController()
+    late final PlatformWebViewControllerCreationParams params;
+    if (Platform.isAndroid) {
+      params = AndroidWebViewControllerCreationParams();
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+
+    _controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -95,14 +110,17 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       )
       ..loadRequest(Uri.parse(kProductionUrl));
 
-    // Android-specific: grant all WebView permissions (camera, mic, etc.)
-    final platform = _controller.platform;
-    if (platform is AndroidWebViewController) {
-      platform.setMediaPlaybackRequiresUserGesture(false);
-      // Grant camera/mic permission when WebView requests it
-      platform.setOnPlatformPermissionRequest((request) {
-        request.grant();
-      });
+    // Android WebView specific: Grant ALL permission requests from the web page
+    if (Platform.isAndroid) {
+      final androidController = _controller.platform as AndroidWebViewController;
+      androidController.setMediaPlaybackRequiresUserGesture(false);
+      
+      // THIS is the key: when the webpage asks for camera/mic, grant it
+      androidController.setOnPlatformPermissionRequest(
+        (PlatformWebViewPermissionRequest request) {
+          request.grant();
+        },
+      );
     }
   }
 
@@ -130,6 +148,13 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
   @override
   Widget build(BuildContext context) {
+    if (!_permissionsReady) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFFF9F5),
+        body: const Center(child: CircularProgressIndicator(color: Color(0xFFC8290C))),
+      );
+    }
+
     return WillPopScope(
       onWillPop: () async {
         if (await _controller.canGoBack()) {
