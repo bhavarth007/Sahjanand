@@ -40,8 +40,8 @@
     </a>
 
     <a href="#" class="nav-item" data-section="samples" onclick="showSection('samples',this);return false;">
-      <i class="fa-solid fa-box-open nav-icon"></i>
-      <span class="nav-label">Samples</span>
+      <i class="fa-solid fa-clipboard-list nav-icon"></i>
+      <span class="nav-label">Job Cards</span>
     </a>
 
     <!-- Admin-only section -->
@@ -386,24 +386,152 @@
       </div>
     </section>
 
-    <!-- ════════ SAMPLES ════════ -->
+    <!-- ════════ JOB CARD VOUCHER (Samples) ════════ -->
     <section class="section" id="section-samples">
       <div class="greeting-bar">
-        <h2>Samples</h2>
-        <p>Manage your product samples stored on Cloudinary.</p>
+        <h2><i class="fa-solid fa-clipboard-list" style="color:var(--primary);margin-right:8px;"></i>Job Card Voucher</h2>
+        <p>Manage production job cards for Ghanshyam Synthetics.</p>
       </div>
-      <div class="section-header">
-        <h3><i class="fa-solid fa-box-open" style="color:var(--primary);margin-right:8px;"></i>Product Samples</h3>
-        <button class="btn-primary" onclick="document.getElementById('sampleUpload').click()">
-          <i class="fa-solid fa-cloud-arrow-up"></i> Upload Sample
+
+      <!-- Header with New button -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;font-size:1rem;font-weight:700;">All Job Cards</h3>
+        <button class="btn-primary" onclick="openNewJobCard()">
+          <i class="fa-solid fa-plus"></i> New Job Card
         </button>
-        <input type="file" id="sampleUpload" accept="image/*" style="display:none" onchange="uploadSample(this)" />
       </div>
-      <div class="samples-grid" id="samplesGrid">
-        <div class="empty-state" style="grid-column:1/-1">
-          <i class="fa-solid fa-image"></i>
-          <p>No samples uploaded yet. Click "Upload Sample" to add your first one.</p>
+
+      <!-- Job Card Form (hidden by default) -->
+      <div class="card" id="jcFormPanel" style="display:none;padding:24px;margin-bottom:20px;">
+        <h4 id="jcFormTitle" style="margin:0 0 16px;font-weight:700;">New Job Card Voucher</h4>
+
+        <!-- Row 1: Job Name, J.Card No, JC Date -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>Job Name</label>
+            <input type="text" id="jc_job_name" placeholder="e.g. 01-MCHN" />
+          </div>
+          <div class="jc-field">
+            <label>J.Card No.</label>
+            <input type="text" id="jc_j_card_no" placeholder="e.g. 2219" />
+          </div>
+          <div class="jc-field">
+            <label>J.C Date</label>
+            <input type="date" id="jc_jc_date" />
+          </div>
         </div>
+
+        <!-- Row 2: P.Name, S.O. No, Quality -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>P. Name</label>
+            <input type="text" id="jc_p_name" placeholder="Product Name" />
+          </div>
+          <div class="jc-field">
+            <label>S.O. No.</label>
+            <input type="text" id="jc_so_no" placeholder="190" />
+          </div>
+          <div class="jc-field">
+            <label>Quality</label>
+            <input type="text" id="jc_quality" placeholder="e.g. NYLON BARBARY" />
+          </div>
+        </div>
+
+        <!-- Row 3: Design No, Total Card, G.Pick -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>Design No.</label>
+            <input type="text" id="jc_design_no" placeholder="SR-365" />
+          </div>
+          <div class="jc-field">
+            <label>Total Card</label>
+            <input type="text" id="jc_total_card" placeholder="45927" />
+          </div>
+          <div class="jc-field">
+            <label>G.Pick</label>
+            <input type="text" id="jc_g_pick" placeholder="72" />
+          </div>
+        </div>
+
+        <!-- Row 4: J.Ord No, Repeat MTR, Repeat PCS -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>J.Ord No.</label>
+            <input type="text" id="jc_j_ord_no" placeholder="162" />
+          </div>
+          <div class="jc-field">
+            <label>Repeat MTR</label>
+            <input type="text" id="jc_repeat_mtr" placeholder="66.90" />
+          </div>
+          <div class="jc-field">
+            <label>Repeat PCS</label>
+            <input type="text" id="jc_repeat_pcs" placeholder="10" />
+          </div>
+        </div>
+
+        <!-- Row 5: Total PCS, Weight/PCS -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>Total PCS</label>
+            <input type="text" id="jc_total_pcs" placeholder="20" />
+          </div>
+          <div class="jc-field">
+            <label>Weight / PCS</label>
+            <input type="text" id="jc_weight_per_pcs" placeholder="1.130" />
+          </div>
+        </div>
+
+        <!-- Row 6: Start Date, End Date, OP Name -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>Start Date</label>
+            <input type="date" id="jc_start_date" />
+          </div>
+          <div class="jc-field">
+            <label>End Date</label>
+            <input type="date" id="jc_end_date" />
+          </div>
+          <div class="jc-field">
+            <label>OP Name</label>
+            <input type="text" id="jc_op_name" placeholder="Operator Name" />
+          </div>
+        </div>
+
+        <!-- Row 7: Remark, Supervisor Sign -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>Remark</label>
+            <textarea id="jc_remark" rows="2" placeholder="Any remarks..." style="resize:vertical;"></textarea>
+          </div>
+          <div class="jc-field">
+            <label>Supervisor Sign</label>
+            <input type="text" id="jc_supervisor_sign" placeholder="Supervisor name" />
+          </div>
+        </div>
+
+        <!-- Image Upload (Required) -->
+        <div style="margin-bottom:16px;padding:12px;border:1.5px dashed var(--border);border-radius:10px;background:#f9f5f3;">
+          <label style="font-size:.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Job Card Image <span style="color:var(--primary);">*</span> (Required)</label>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+            <button type="button" class="btn-primary" style="padding:8px 16px;font-size:.82rem;" onclick="document.getElementById('jcImageInput').click()">
+              <i class="fa-solid fa-camera"></i> Upload Image
+            </button>
+            <input type="file" id="jcImageInput" accept="image/*" style="display:none" onchange="uploadJobCardImage(this)" />
+            <input type="hidden" id="jcImageUrl" value="" />
+            <div id="jcImagePreview"></div>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+          <button class="btn-secondary" onclick="closeJobCardForm()">Cancel</button>
+          <button class="btn-primary" onclick="saveJobCard()"><i class="fa-solid fa-check"></i> Save Job Card</button>
+        </div>
+      </div>
+
+      <!-- Job Card List -->
+      <div id="jcCardGrid">
+        <div class="jc-empty">Loading job cards...</div>
       </div>
     </section>
 
@@ -581,5 +709,6 @@
 <script src="/js/chat.js"></script>
 <script src="/js/group_reminders.js"></script>
 <script src="/js/admin.js"></script>
+<script src="/js/job_cards.js"></script>
 </body>
 </html>

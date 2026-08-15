@@ -208,6 +208,11 @@ function showSection(id, el) {
     initAdmin();
   }
 
+  // Initialize job cards when Samples section is opened
+  if (id === 'samples' && typeof initJobCards === 'function') {
+    initJobCards();
+  }
+
   // Initialize admin CRUD when profile is opened (admin only)
   if (id === 'profile' && userData.is_admin && typeof initAdminCrud === 'function') {
     initAdminCrud();

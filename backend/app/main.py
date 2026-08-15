@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from app.database import init_db, close_db
 from app.routes import auth, sales, reminders, samples, chat as chat_router, admin as admin_router, group_reminders
+from app.routes import job_cards as job_cards_router
 from app.config import get_settings
 
 import app.models.db_models  # noqa: F401
@@ -66,6 +67,7 @@ app.include_router(chat_router.router)
 app.include_router(admin_router.router)
 app.include_router(group_reminders.router)
 app.include_router(group_reminders.global_reminder_router)
+app.include_router(job_cards_router.router)
 
 
 @app.get("/health", tags=["Health"])

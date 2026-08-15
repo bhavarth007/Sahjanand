@@ -156,3 +156,48 @@ class GroupReminder(Base):
     group      = relationship("ChatGroup")
     creator    = relationship("User", foreign_keys=[created_by])
     target_user = relationship("User", foreign_keys=[remind_to])
+
+
+class JobCard(Base):
+    """
+    Job Card Voucher — production tracking for textile manufacturing.
+    """
+    __tablename__ = "job_cards"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    user_id         = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Header info
+    job_name        = Column(String(100), nullable=True)     # e.g. "01-MCHN"
+    j_card_no       = Column(String(50), nullable=True)      # e.g. "2219"
+    p_name          = Column(String(255), nullable=True)     # Product Name
+    so_no           = Column(String(50), nullable=True)      # S.O. No.
+    quality         = Column(String(255), nullable=True)     # Quality
+    design_no       = Column(String(100), nullable=True)     # Design No
+    total_card      = Column(String(50), nullable=True)      # Total Card
+    g_pick          = Column(String(50), nullable=True)      # G.Pick
+    jc_date         = Column(String(20), nullable=True)      # J.C Date
+    j_ord_no        = Column(String(50), nullable=True)      # J.Ord No.
+    repeat_mtr      = Column(String(50), nullable=True)      # Repeat MTR
+    repeat_pcs      = Column(String(50), nullable=True)      # Repeat PCS
+    total_pcs       = Column(String(50), nullable=True)      # Total PCS
+    weight_per_pcs  = Column(String(50), nullable=True)      # Weight per PCS
+
+    # Bottom section
+    start_date      = Column(String(20), nullable=True)      # Start Date
+    end_date        = Column(String(20), nullable=True)      # End Date
+    op_name         = Column(String(255), nullable=True)     # Operator Name
+    remark          = Column(Text, nullable=True)            # Remark
+    supervisor_sign = Column(String(255), nullable=True)     # Supervisor Sign
+
+    # Image (required for saving)
+    image_url       = Column(String(500), nullable=True)     # Uploaded image URL
+
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", back_populates="job_cards")
+
+
+# Add relationship to User model - done via backref
+User.job_cards = relationship("JobCard", back_populates="user", cascade="all, delete-orphan")
