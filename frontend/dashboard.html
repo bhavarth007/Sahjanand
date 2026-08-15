@@ -467,6 +467,34 @@
           </div>
         </div>
 
+        <!-- Row: Start Date, End Date, OP Name -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;margin-top:16px;">
+          <div class="jc-field">
+            <label>Start Date</label>
+            <input type="date" id="jc_start_date" />
+          </div>
+          <div class="jc-field">
+            <label>End Date</label>
+            <input type="date" id="jc_end_date" />
+          </div>
+          <div class="jc-field">
+            <label>OP Name</label>
+            <input type="text" id="jc_op_name" placeholder="Operator Name" />
+          </div>
+        </div>
+
+        <!-- Row: Remark, Supervisor Sign -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div class="jc-field">
+            <label>Remark</label>
+            <textarea id="jc_remark" rows="2" placeholder="Any remarks..." style="resize:vertical;"></textarea>
+          </div>
+          <div class="jc-field">
+            <label>Supervisor Sign</label>
+            <input type="text" id="jc_supervisor_sign" placeholder="Supervisor name" />
+          </div>
+        </div>
+
         <!-- TAKA TABLE -->
         <div style="margin:20px 0 12px;">
           <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -502,34 +530,6 @@
             <input type="file" id="jcImageInput" accept="image/*" style="display:none" onchange="uploadJobCardImage(this)" />
             <input type="hidden" id="jcImageUrl" value="" />
             <div id="jcImagePreview"></div>
-          </div>
-        </div>
-
-        <!-- Row: Start Date, End Date, OP Name -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;margin-top:16px;">
-          <div class="jc-field">
-            <label>Start Date</label>
-            <input type="date" id="jc_start_date" />
-          </div>
-          <div class="jc-field">
-            <label>End Date</label>
-            <input type="date" id="jc_end_date" />
-          </div>
-          <div class="jc-field">
-            <label>OP Name</label>
-            <input type="text" id="jc_op_name" placeholder="Operator Name" />
-          </div>
-        </div>
-
-        <!-- Row: Remark, Supervisor Sign -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-          <div class="jc-field">
-            <label>Remark</label>
-            <textarea id="jc_remark" rows="2" placeholder="Any remarks..." style="resize:vertical;"></textarea>
-          </div>
-          <div class="jc-field">
-            <label>Supervisor Sign</label>
-            <input type="text" id="jc_supervisor_sign" placeholder="Supervisor name" />
           </div>
         </div>
 
