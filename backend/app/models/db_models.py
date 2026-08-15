@@ -190,6 +190,10 @@ class JobCard(Base):
     remark          = Column(Text, nullable=True)            # Remark
     supervisor_sign = Column(String(255), nullable=True)     # Supervisor Sign
 
+    # Tables (stored as JSON strings)
+    program_matching = Column(Text, nullable=True)           # JSON: [{cmp_type,color_name,yarn_beam_name,weight_mtr}]
+    taka_rows        = Column(Text, nullable=True)           # JSON: [{taka_no,cut,pcs,mtr,weight,color,remark}]
+
     # Image (required for saving)
     image_url       = Column(String(500), nullable=True)     # Uploaded image URL
 

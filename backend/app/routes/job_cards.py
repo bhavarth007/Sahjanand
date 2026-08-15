@@ -35,6 +35,8 @@ class JobCardCreate(BaseModel):
     op_name: Optional[str] = None
     remark: Optional[str] = None
     supervisor_sign: Optional[str] = None
+    program_matching: Optional[str] = None
+    taka_rows: Optional[str] = None
     image_url: Optional[str] = None
 
 
@@ -60,6 +62,8 @@ class JobCardOut(BaseModel):
     op_name: Optional[str] = None
     remark: Optional[str] = None
     supervisor_sign: Optional[str] = None
+    program_matching: Optional[str] = None
+    taka_rows: Optional[str] = None
     image_url: Optional[str] = None
     created_at: datetime
 

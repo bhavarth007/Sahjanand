@@ -9,45 +9,42 @@ let jcLoaded = false;
 let jcCards = [];
 let jcEditingId = null;
 
-// ── Init ──
+// Fixed CMP TYPE rows for Program Matching
+const CMP_TYPES = ['BEAM & COLOR', 'FDR-1', 'FDR-2', 'FDR-3', 'FDR-4', 'FDR-5', 'FDR-6', 'FDR-7', 'FDR-8'];
+
+// Simple text fields to save
+const JC_FIELDS = ['job_name','j_card_no','jc_date','quality','design_no','g_pick','repeat_mtr','repeat_pcs','start_date','end_date','op_name','remark','supervisor_sign'];
+
 function initJobCards() {
   if (jcLoaded) return;
   jcLoaded = true;
   loadJobCards();
 }
 
-// ── Load all job cards ──
 async function loadJobCards() {
   const token = localStorage.getItem('sahjanand_token');
   const grid = document.getElementById('jcCardGrid');
   if (!grid) return;
-
   try {
-    const res = await fetch(`${JC_API}/api/job-cards/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(`${JC_API}/api/job-cards/`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) { grid.innerHTML = '<div class="jc-empty">No job cards yet. Click "+ New Job Card" to create one.</div>'; return; }
     jcCards = await res.json();
     renderJobCardList();
   } catch (e) {
-    console.warn('[job-cards]', e);
     grid.innerHTML = '<div class="jc-empty">No job cards yet.</div>';
   }
 }
 
-// ── Render list ──
 function renderJobCardList() {
   const grid = document.getElementById('jcCardGrid');
   if (!grid) return;
-
   if (!jcCards.length) {
     grid.innerHTML = '<div class="jc-empty">No job cards yet. Click "+ New Job Card" to create one.</div>';
     return;
   }
-
   grid.innerHTML = jcCards.map((c, i) => {
     const title = `${c.job_name || 'Job'} — J.CARD NO.: ${c.j_card_no || '—'}`;
-    const sub = [c.p_name, c.quality, c.design_no].filter(Boolean).join(' | ');
+    const sub = [c.quality, c.design_no].filter(Boolean).join(' | ');
     const date = c.jc_date || c.start_date || '';
     return `
       <div class="jc-row" onclick="openJobCardDetail(${c.id})">
@@ -64,20 +61,91 @@ function renderJobCardList() {
           <button class="jc-btn-edit" onclick="event.stopPropagation();editJobCard(${c.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>
           <button class="jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
 
-// ── Open form for new ──
+// ── Render Program Matching table ──
+function renderProgramTable(data) {
+  const body = document.getElementById('jcProgramBody');
+  if (!body) return;
+  const rows = data || CMP_TYPES.map(t => ({ cmp_type: t, color_name: '', yarn_beam_name: '', weight_mtr: '' }));
+  body.innerHTML = rows.map((r, i) => `
+    <tr>
+      <td class="jc-td-fixed">${esc(r.cmp_type)}</td>
+      <td><input type="text" class="jc-cell" data-pm="${i}" data-k="color_name" value="${esc(r.color_name)}" /></td>
+      <td><input type="text" class="jc-cell" data-pm="${i}" data-k="yarn_beam_name" value="${esc(r.yarn_beam_name)}" /></td>
+      <td><input type="text" class="jc-cell" data-pm="${i}" data-k="weight_mtr" value="${esc(r.weight_mtr)}" /></td>
+    </tr>`).join('');
+}
+
+// ── Render Taka table ──
+function renderTakaTable(data) {
+  const body = document.getElementById('jcTakaBody');
+  if (!body) return;
+  let rows = data && data.length ? data : [emptyTaka(), emptyTaka(), emptyTaka()];
+  body.innerHTML = rows.map((r, i) => takaRowHtml(r, i)).join('');
+}
+
+function emptyTaka() { return { taka_no:'', cut:'', pcs:'', mtr:'', weight:'', color:'', remark:'' }; }
+
+function takaRowHtml(r, i) {
+  return `
+    <tr data-taka-row="${i}">
+      <td><input type="text" class="jc-cell" data-tk="${i}" data-k="taka_no" value="${esc(r.taka_no)}" /></td>
+      <td><input type="text" class="jc-cell" data-tk="${i}" data-k="cut" value="${esc(r.cut)}" /></td>
+      <td><input type="text" class="jc-cell" data-tk="${i}" data-k="pcs" value="${esc(r.pcs)}" /></td>
+      <td><input type="text" class="jc-cell" data-tk="${i}" data-k="mtr" value="${esc(r.mtr)}" /></td>
+      <td><input type="text" class="jc-cell" data-tk="${i}" data-k="weight" value="${esc(r.weight)}" /></td>
+      <td><input type="text" class="jc-cell" data-tk="${i}" data-k="color" value="${esc(r.color)}" /></td>
+      <td><input type="text" class="jc-cell" data-tk="${i}" data-k="remark" value="${esc(r.remark)}" /></td>
+      <td><button class="jc-btn-delete" style="width:26px;height:26px;" onclick="removeTakaRow(this)" title="Remove"><i class="fa-solid fa-xmark"></i></button></td>
+    </tr>`;
+}
+
+function addTakaRow() {
+  const body = document.getElementById('jcTakaBody');
+  if (!body) return;
+  const i = body.querySelectorAll('tr').length;
+  body.insertAdjacentHTML('beforeend', takaRowHtml(emptyTaka(), i));
+}
+
+function removeTakaRow(btn) {
+  const tr = btn.closest('tr');
+  if (tr) tr.remove();
+}
+
+// ── Collect table data ──
+function collectProgramData() {
+  const rows = [];
+  document.querySelectorAll('#jcProgramBody tr').forEach((tr, i) => {
+    const cmp = tr.querySelector('.jc-td-fixed')?.textContent || CMP_TYPES[i] || '';
+    const get = (k) => tr.querySelector(`[data-k="${k}"]`)?.value || '';
+    rows.push({ cmp_type: cmp, color_name: get('color_name'), yarn_beam_name: get('yarn_beam_name'), weight_mtr: get('weight_mtr') });
+  });
+  return rows;
+}
+
+function collectTakaData() {
+  const rows = [];
+  document.querySelectorAll('#jcTakaBody tr').forEach((tr) => {
+    const get = (k) => tr.querySelector(`[data-k="${k}"]`)?.value || '';
+    const row = { taka_no: get('taka_no'), cut: get('cut'), pcs: get('pcs'), mtr: get('mtr'), weight: get('weight'), color: get('color'), remark: get('remark') };
+    // Only include non-empty rows
+    if (Object.values(row).some(v => v.trim())) rows.push(row);
+  });
+  return rows;
+}
+
 function openNewJobCard() {
   jcEditingId = null;
   clearJobCardForm();
+  renderProgramTable(null);
+  renderTakaTable(null);
   document.getElementById('jcFormPanel').style.display = 'block';
   document.getElementById('jcFormTitle').textContent = 'New Job Card Voucher';
 }
 
-// ── Open form for edit ──
 function editJobCard(id) {
   const card = jcCards.find(c => c.id === id);
   if (!card) return;
@@ -85,36 +153,31 @@ function editJobCard(id) {
   document.getElementById('jcFormPanel').style.display = 'block';
   document.getElementById('jcFormTitle').textContent = 'Edit Job Card Voucher';
 
-  // Fill form
-  const fields = ['job_name','j_card_no','p_name','so_no','quality','design_no','total_card','g_pick','jc_date','j_ord_no','repeat_mtr','repeat_pcs','total_pcs','weight_per_pcs','start_date','end_date','op_name','remark','supervisor_sign'];
-  fields.forEach(f => {
+  JC_FIELDS.forEach(f => {
     const el = document.getElementById('jc_' + f);
     if (el) el.value = card[f] || '';
   });
   document.getElementById('jcImageUrl').value = card.image_url || '';
   const preview = document.getElementById('jcImagePreview');
-  if (card.image_url) {
-    preview.innerHTML = `<img src="${esc(card.image_url)}" style="max-height:80px;border-radius:8px;" />`;
-  } else {
-    preview.innerHTML = '';
-  }
+  preview.innerHTML = card.image_url ? `<img src="${esc(card.image_url)}" style="max-height:80px;border-radius:8px;" />` : '';
+
+  // Parse and render tables
+  let pm = null, tk = null;
+  try { pm = card.program_matching ? JSON.parse(card.program_matching) : null; } catch {}
+  try { tk = card.taka_rows ? JSON.parse(card.taka_rows) : null; } catch {}
+  renderProgramTable(pm);
+  renderTakaTable(tk);
 }
 
-// ── View detail ──
-function openJobCardDetail(id) {
-  editJobCard(id);
-}
+function openJobCardDetail(id) { editJobCard(id); }
 
-// ── Close form ──
 function closeJobCardForm() {
   document.getElementById('jcFormPanel').style.display = 'none';
   jcEditingId = null;
 }
 
-// ── Clear form ──
 function clearJobCardForm() {
-  const fields = ['job_name','j_card_no','p_name','so_no','quality','design_no','total_card','g_pick','jc_date','j_ord_no','repeat_mtr','repeat_pcs','total_pcs','weight_per_pcs','start_date','end_date','op_name','remark','supervisor_sign'];
-  fields.forEach(f => {
+  JC_FIELDS.forEach(f => {
     const el = document.getElementById('jc_' + f);
     if (el) el.value = '';
   });
@@ -122,23 +185,16 @@ function clearJobCardForm() {
   document.getElementById('jcImagePreview').innerHTML = '';
 }
 
-// ── Upload image ──
 async function uploadJobCardImage(input) {
   const file = input.files[0];
   if (!file) return;
   const token = localStorage.getItem('sahjanand_token');
   const formData = new FormData();
   formData.append('file', file);
-
   const preview = document.getElementById('jcImagePreview');
   preview.innerHTML = '<span style="color:#888;font-size:.8rem;">Uploading...</span>';
-
   try {
-    const res = await fetch(`${JC_API}/api/chat/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
+    const res = await fetch(`${JC_API}/api/chat/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData });
     if (res.ok) {
       const data = await res.json();
       const url = data.url || data.media_url || '';
@@ -153,25 +209,21 @@ async function uploadJobCardImage(input) {
   input.value = '';
 }
 
-// ── Save job card ──
 async function saveJobCard() {
   const imageUrl = document.getElementById('jcImageUrl').value;
-  if (!imageUrl) {
-    alert('Please upload an image first. Image is required.');
-    return;
-  }
+  if (!imageUrl) { alert('Please upload an image first. Image is required.'); return; }
 
   const token = localStorage.getItem('sahjanand_token');
-  const fields = ['job_name','j_card_no','p_name','so_no','quality','design_no','total_card','g_pick','jc_date','j_ord_no','repeat_mtr','repeat_pcs','total_pcs','weight_per_pcs','start_date','end_date','op_name','remark','supervisor_sign'];
   const body = { image_url: imageUrl };
-  fields.forEach(f => {
+  JC_FIELDS.forEach(f => {
     const el = document.getElementById('jc_' + f);
     if (el && el.value.trim()) body[f] = el.value.trim();
   });
+  body.program_matching = JSON.stringify(collectProgramData());
+  body.taka_rows = JSON.stringify(collectTakaData());
 
   const url = jcEditingId ? `${JC_API}/api/job-cards/${jcEditingId}` : `${JC_API}/api/job-cards/`;
   const method = jcEditingId ? 'PATCH' : 'POST';
-
   try {
     const res = await fetch(url, {
       method,
@@ -191,15 +243,11 @@ async function saveJobCard() {
   }
 }
 
-// ── Delete ──
 async function deleteJobCard(id) {
   if (!confirm('Delete this job card?')) return;
   const token = localStorage.getItem('sahjanand_token');
   try {
-    await fetch(`${JC_API}/api/job-cards/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await fetch(`${JC_API}/api/job-cards/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     jcLoaded = false;
     initJobCards();
   } catch {}
@@ -207,7 +255,6 @@ async function deleteJobCard(id) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
-// ── Expose ──
 window.initJobCards = initJobCards;
 window.openNewJobCard = openNewJobCard;
 window.editJobCard = editJobCard;
@@ -216,5 +263,7 @@ window.closeJobCardForm = closeJobCardForm;
 window.uploadJobCardImage = uploadJobCardImage;
 window.saveJobCard = saveJobCard;
 window.deleteJobCard = deleteJobCard;
+window.addTakaRow = addTakaRow;
+window.removeTakaRow = removeTakaRow;
 
 })();
