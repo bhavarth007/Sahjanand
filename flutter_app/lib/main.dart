@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 const String kProductionUrl = 'https://sahjanand-api.onrender.com';
 
@@ -37,6 +40,13 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   late final WebViewController _controller;
   bool _isLoading = true, _hasError = false, _ready = false;
   int _retryCount = 0;
+
+  // Voice recording state
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  bool _isRecording = false;
+  String? _recordingPath;
+  Timer? _recordingTimer;
+  int _recordingSeconds = 0;
 
   @override
   void initState() {
@@ -99,9 +109,108 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     try {
       final d = jsonDecode(msg.message);
       if (d['action'] == 'pickFile') await _pickFile(d['accept'] ?? '*/*');
-      else if (d['action'] == 'pickAudio') await _pickAudio();
+      else if (d['action'] == 'pickAudio') await _showRecordingUI();
     } catch (e) { debugPrint('[Bridge] $e'); }
   }
+
+  // ── Voice Recording (WhatsApp-style) ──
+
+  Future<void> _showRecordingUI() async {
+    // Check microphone permission
+    final micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted) {
+      final result = await Permission.microphone.request();
+      if (!result.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission is required to record audio')),
+          );
+        }
+        return;
+      }
+    }
+
+    // Start recording immediately
+    await _startRecording();
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      _recordingPath = '${dir.path}/voice_$timestamp.m4a';
+
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: _recordingPath!,
+      );
+
+      _recordingSeconds = 0;
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (mounted) setState(() => _recordingSeconds++);
+      });
+
+      if (mounted) setState(() => _isRecording = true);
+    } catch (e) {
+      debugPrint('[Recording] Start error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not start recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+
+    try {
+      final path = await _audioRecorder.stop();
+      if (mounted) setState(() => _isRecording = false);
+
+      if (path != null && path.isNotEmpty) {
+        final file = File(path);
+        if (await file.exists()) {
+          final name = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          await _upload(file, name);
+        }
+      }
+    } catch (e) {
+      debugPrint('[Recording] Stop error: $e');
+      if (mounted) setState(() => _isRecording = false);
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+
+    try {
+      await _audioRecorder.stop();
+      // Delete the recorded file
+      if (_recordingPath != null) {
+        final file = File(_recordingPath!);
+        if (await file.exists()) await file.delete();
+      }
+    } catch (e) {
+      debugPrint('[Recording] Cancel error: $e');
+    }
+
+    if (mounted) setState(() => _isRecording = false);
+  }
+
+  String _formatDuration(int seconds) {
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  // ── File Picking ──
 
   Future<void> _pickFile(String accept) async {
     final picker = ImagePicker();
@@ -122,11 +231,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       final r = await FilePicker.platform.pickFiles(type: FileType.any);
       if (r != null && r.files.isNotEmpty) await _upload(File(r.files.single.path!), r.files.single.name);
     }
-  }
-
-  Future<void> _pickAudio() async {
-    final r = await FilePicker.platform.pickFiles(type: FileType.audio);
-    if (r != null && r.files.isNotEmpty) await _upload(File(r.files.single.path!), r.files.single.name);
   }
 
   Future<ImageSource?> _srcDialog() => showDialog<ImageSource>(context: context, builder: (c) => AlertDialog(
@@ -171,7 +275,12 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   }
 
   @override
-  void dispose() { WidgetsBinding.instance.removeObserver(this); super.dispose(); }
+  void dispose() {
+    _recordingTimer?.cancel();
+    _audioRecorder.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -186,7 +295,11 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     if (!_ready) return Scaffold(backgroundColor: const Color(0xFFFFF9F5), body: const Center(child: CircularProgressIndicator(color: Color(0xFFC8290C))));
     return WillPopScope(
-      onWillPop: () async { if (await _controller.canGoBack()) { await _controller.goBack(); return false; } return true; },
+      onWillPop: () async {
+        if (_isRecording) { await _cancelRecording(); return false; }
+        if (await _controller.canGoBack()) { await _controller.goBack(); return false; }
+        return true;
+      },
       child: Scaffold(backgroundColor: const Color(0xFFFFF9F5), body: SafeArea(child: Stack(children: [
         if (_hasError) Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.cloud_off_rounded, size: 64, color: Color(0xFFC8290C)), const SizedBox(height: 16),
@@ -197,6 +310,68 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
           Image.asset('assets/icon.png', width: 100, height: 100, errorBuilder: (_, __, ___) => const Icon(Icons.business, size: 64, color: Color(0xFFC8290C))),
           const SizedBox(height: 24), const Text('Sahjanand', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC8290C))),
           const SizedBox(height: 16), const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(color: Color(0xFFC8290C), strokeWidth: 3))]))),
+
+        // Voice Recording Overlay (WhatsApp-style)
+        if (_isRecording) _buildRecordingOverlay(),
       ]))));
+  }
+
+  Widget _buildRecordingOverlay() {
+    return Positioned(
+      left: 0, right: 0, bottom: 0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, -2))],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Row(children: [
+            // Cancel button
+            GestureDetector(
+              onTap: _cancelRecording,
+              child: Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.delete_outline, color: Colors.red, size: 24),
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            // Recording indicator + timer
+            Expanded(
+              child: Row(children: [
+                Container(
+                  width: 10, height: 10,
+                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Recording ${_formatDuration(_recordingSeconds)}',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
+                ),
+              ]),
+            ),
+
+            // Send button
+            GestureDetector(
+              onTap: _stopAndSendRecording,
+              child: Container(
+                width: 48, height: 48,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFC8290C),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.send, color: Colors.white, size: 22),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 }
