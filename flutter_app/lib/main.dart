@@ -47,6 +47,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   bool _isRecording = false;
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
+  bool _isUploading = false;
 
   @override
   void initState() {
@@ -56,8 +57,18 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   }
 
   Future<void> _init() async {
-    await [Permission.camera, Permission.microphone, Permission.storage, Permission.notification].request();
-    if (Platform.isAndroid) { await Permission.photos.request(); await Permission.videos.request(); }
+    // Request all permissions upfront
+    await [
+      Permission.camera,
+      Permission.microphone,
+      Permission.storage,
+      Permission.notification,
+    ].request();
+    if (Platform.isAndroid) {
+      await Permission.photos.request();
+      await Permission.videos.request();
+      await Permission.audio.request();
+    }
     _initWebView();
     setState(() => _ready = true);
   }
@@ -113,21 +124,37 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     } catch (e) { debugPrint('[Bridge] $e'); }
   }
 
-  // ── Voice Recording (WhatsApp-style using native platform channel) ──
+  // ── Voice Recording (WhatsApp-style) ──
 
   Future<void> _showRecordingUI() async {
-    final micStatus = await Permission.microphone.status;
+    // Force request microphone permission
+    var micStatus = await Permission.microphone.status;
     if (!micStatus.isGranted) {
-      final result = await Permission.microphone.request();
-      if (!result.isGranted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission is required to record audio')),
-          );
-        }
-        return;
-      }
+      micStatus = await Permission.microphone.request();
     }
+    
+    if (micStatus.isPermanentlyDenied) {
+      // User permanently denied - need to open settings
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Microphone permission denied. Please enable in Settings.'),
+            action: SnackBarAction(label: 'Settings', onPressed: () => openAppSettings()),
+          ),
+        );
+      }
+      return;
+    }
+    
+    if (!micStatus.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission is required to record audio')),
+        );
+      }
+      return;
+    }
+
     await _startRecording();
   }
 
@@ -149,7 +176,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       debugPrint('[Recording] Start error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not start recording: $e')),
+          SnackBar(content: Text('Recording failed: ${e.toString().replaceAll('PlatformException', '').replaceAll('(', '').replaceAll(')', '')}')),
         );
       }
     }
@@ -165,7 +192,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
       if (path != null && path.isNotEmpty) {
         final file = File(path);
-        if (await file.exists()) {
+        if (await file.exists() && await file.length() > 0) {
           final name = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
           await _upload(file, name);
         }
@@ -198,51 +225,123 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   // ── File Picking ──
 
   Future<void> _pickFile(String accept) async {
-    final picker = ImagePicker();
-    if (accept.contains('image')) {
-      final src = await _srcDialog();
-      if (src == null) return;
-      if (src == ImageSource.camera) {
-        final f = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
-        if (f != null) await _upload(File(f.path), f.name);
+    try {
+      final picker = ImagePicker();
+      
+      if (accept.contains('image')) {
+        final src = await _srcDialog();
+        if (src == null) return;
+        if (src == ImageSource.camera) {
+          final f = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+          if (f != null) await _uploadXFile(f);
+        } else {
+          final fs = await picker.pickMultiImage(imageQuality: 80);
+          for (final f in fs) { await _uploadXFile(f); }
+        }
+      } else if (accept.contains('video')) {
+        final f = await picker.pickVideo(source: ImageSource.gallery);
+        if (f != null) await _uploadXFile(f);
       } else {
-        final fs = await picker.pickMultiImage(imageQuality: 80);
-        for (final f in fs) { await _upload(File(f.path), f.name); }
+        // Generic file - use FilePicker
+        final r = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false);
+        if (r != null && r.files.isNotEmpty) {
+          final pf = r.files.single;
+          if (pf.path != null) {
+            await _upload(File(pf.path!), pf.name);
+          }
+        }
       }
-    } else if (accept.contains('video')) {
-      final f = await picker.pickVideo(source: ImageSource.gallery);
-      if (f != null) await _upload(File(f.path), f.name);
-    } else {
-      final r = await FilePicker.platform.pickFiles(type: FileType.any);
-      if (r != null && r.files.isNotEmpty) await _upload(File(r.files.single.path!), r.files.single.name);
+    } catch (e) {
+      debugPrint('[PickFile] Error: $e');
+    }
+  }
+
+  /// Upload an XFile (from image_picker) - handles content URIs properly
+  Future<void> _uploadXFile(XFile xfile) async {
+    try {
+      // Read the file bytes directly from XFile - this handles content URIs
+      final bytes = await xfile.readAsBytes();
+      if (bytes.isEmpty) return;
+      
+      final name = xfile.name.isNotEmpty ? xfile.name : 'file_${DateTime.now().millisecondsSinceEpoch}';
+      
+      final tr = await _controller.runJavaScriptReturningResult('localStorage.getItem("sahjanand_token")');
+      final token = tr.toString().replaceAll('"', '');
+      if (token == 'null' || token.isEmpty) return;
+
+      if (mounted) setState(() => _isUploading = true);
+
+      final req = http.MultipartRequest('POST', Uri.parse('$kProductionUrl/api/chat/upload'))
+        ..headers['Authorization'] = 'Bearer $token'
+        ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: name));
+      
+      final res = await req.send();
+      
+      if (mounted) setState(() => _isUploading = false);
+      
+      if (res.statusCode == 200) {
+        final body = jsonDecode(await res.stream.bytesToString());
+        final url = body['url'] ?? body['media_url'] ?? '';
+        if (url.toString().isNotEmpty) {
+          _sendMediaMessage(url, name);
+        }
+      } else {
+        debugPrint('[Upload] Server returned ${res.statusCode}');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isUploading = false);
+      debugPrint('[Upload XFile] Error: $e');
     }
   }
 
   Future<ImageSource?> _srcDialog() => showDialog<ImageSource>(context: context, builder: (c) => AlertDialog(
-    title: const Text('Select'), content: Column(mainAxisSize: MainAxisSize.min, children: [
+    title: const Text('Select Source'), content: Column(mainAxisSize: MainAxisSize.min, children: [
       ListTile(leading: const Icon(Icons.camera_alt), title: const Text('Camera'), onTap: () => Navigator.pop(c, ImageSource.camera)),
       ListTile(leading: const Icon(Icons.photo_library), title: const Text('Gallery'), onTap: () => Navigator.pop(c, ImageSource.gallery)),
     ])));
 
   Future<void> _upload(File file, String name) async {
     try {
+      if (!await file.exists()) return;
+      final fileSize = await file.length();
+      if (fileSize == 0) return;
+
       final tr = await _controller.runJavaScriptReturningResult('localStorage.getItem("sahjanand_token")');
       final token = tr.toString().replaceAll('"', '');
       if (token == 'null' || token.isEmpty) return;
+
+      if (mounted) setState(() => _isUploading = true);
+
       final req = http.MultipartRequest('POST', Uri.parse('$kProductionUrl/api/chat/upload'))
         ..headers['Authorization'] = 'Bearer $token'
         ..files.add(await http.MultipartFile.fromPath('file', file.path, filename: name));
       final res = await req.send();
+
+      if (mounted) setState(() => _isUploading = false);
+
       if (res.statusCode == 200) {
         final body = jsonDecode(await res.stream.bytesToString());
         final url = body['url'] ?? body['media_url'] ?? '';
-        _controller.runJavaScript('''
+        if (url.toString().isNotEmpty) {
+          _sendMediaMessage(url, name);
+        }
+      } else {
+        debugPrint('[Upload] Server returned ${res.statusCode}');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isUploading = false);
+      debugPrint('[Upload] Error: $e');
+    }
+  }
+
+  void _sendMediaMessage(String url, String name) {
+    _controller.runJavaScript('''
 (function(){
   var token=localStorage.getItem('sahjanand_token'),gid=window.currentGroupId,api=window.API||'';
   if(!gid||!token)return;
   var ext='$name'.split('.').pop().toLowerCase();
-  var t='image';if(['mp4','mov','webm','avi'].indexOf(ext)>=0)t='video';
-  if(['mp3','ogg','wav','m4a','webm','aac'].indexOf(ext)>=0)t='voice';
+  var t='image';if(['mp4','mov','webm','avi','3gp'].indexOf(ext)>=0)t='video';
+  if(['mp3','ogg','wav','m4a','webm','aac','amr'].indexOf(ext)>=0)t='voice';
   fetch(api+'/api/chat/groups/'+gid+'/messages',{method:'POST',
     headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
     body:JSON.stringify({msg_type:t,media_url:'$url',media_name:'$name',content:''})
@@ -254,9 +353,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   x=document.getElementById('rpMediaName');if(x)x.value='$name';
   x=document.getElementById('rpMediaInfo');if(x)x.textContent='$name';
 })();
-        ''');
-      }
-    } catch (e) { debugPrint('[Upload] $e'); }
+    ''');
   }
 
   @override
@@ -297,6 +394,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
         // Voice Recording Overlay (WhatsApp-style)
         if (_isRecording) _buildRecordingOverlay(),
+
+        // Upload indicator
+        if (_isUploading) _buildUploadIndicator(),
       ]))));
   }
 
@@ -317,43 +417,47 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
               onTap: _cancelRecording,
               child: Container(
                 width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
                 child: const Icon(Icons.delete_outline, color: Colors.red, size: 24),
               ),
             ),
             const SizedBox(width: 12),
-
             // Recording indicator + timer
             Expanded(
               child: Row(children: [
-                Container(
-                  width: 10, height: 10,
-                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                ),
+                Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
                 const SizedBox(width: 8),
-                Text(
-                  'Recording ${_formatDuration(_recordingSeconds)}',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
-                ),
+                Text('Recording ${_formatDuration(_recordingSeconds)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87)),
               ]),
             ),
-
             // Send button
             GestureDetector(
               onTap: _stopAndSendRecording,
               child: Container(
                 width: 48, height: 48,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFC8290C),
-                  shape: BoxShape.circle,
-                ),
+                decoration: const BoxDecoration(color: Color(0xFFC8290C), shape: BoxShape.circle),
                 child: const Icon(Icons.send, color: Colors.white, size: 22),
               ),
             ),
           ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUploadIndicator() {
+    return Positioned(
+      left: 0, right: 0, bottom: 0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        color: Colors.white,
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC8290C))),
+            SizedBox(width: 12),
+            Text('Uploading...', style: TextStyle(fontSize: 14, color: Colors.black54)),
+          ],
         ),
       ),
     );
