@@ -10,9 +10,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
 
 const String kProductionUrl = 'https://sahjanand-api.onrender.com';
+
+// Method channel for native audio recording
+const MethodChannel _recorderChannel = MethodChannel('com.sahjanand.recorder');
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,9 +44,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   int _retryCount = 0;
 
   // Voice recording state
-  final AudioRecorder _audioRecorder = AudioRecorder();
   bool _isRecording = false;
-  String? _recordingPath;
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
 
@@ -113,10 +113,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     } catch (e) { debugPrint('[Bridge] $e'); }
   }
 
-  // ── Voice Recording (WhatsApp-style) ──
+  // ── Voice Recording (WhatsApp-style using native platform channel) ──
 
   Future<void> _showRecordingUI() async {
-    // Check microphone permission
     final micStatus = await Permission.microphone.status;
     if (!micStatus.isGranted) {
       final result = await Permission.microphone.request();
@@ -129,8 +128,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
         return;
       }
     }
-
-    // Start recording immediately
     await _startRecording();
   }
 
@@ -138,16 +135,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     try {
       final dir = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      _recordingPath = '${dir.path}/voice_$timestamp.m4a';
+      final path = '${dir.path}/voice_$timestamp.m4a';
 
-      await _audioRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: _recordingPath!,
-      );
+      await _recorderChannel.invokeMethod('startRecording', {'path': path});
 
       _recordingSeconds = 0;
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (t) {
@@ -170,7 +160,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     _recordingTimer = null;
 
     try {
-      final path = await _audioRecorder.stop();
+      final String? path = await _recorderChannel.invokeMethod('stopRecording');
       if (mounted) setState(() => _isRecording = false);
 
       if (path != null && path.isNotEmpty) {
@@ -191,12 +181,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     _recordingTimer = null;
 
     try {
-      await _audioRecorder.stop();
-      // Delete the recorded file
-      if (_recordingPath != null) {
-        final file = File(_recordingPath!);
-        if (await file.exists()) await file.delete();
-      }
+      await _recorderChannel.invokeMethod('cancelRecording');
     } catch (e) {
       debugPrint('[Recording] Cancel error: $e');
     }
@@ -277,7 +262,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   @override
   void dispose() {
     _recordingTimer?.cancel();
-    _audioRecorder.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

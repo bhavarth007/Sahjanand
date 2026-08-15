@@ -30,7 +30,18 @@ jobs:
       - name: Create Android project and get deps
         working-directory: flutter_app
         run: |
+          # Backup our pubspec before flutter create overwrites it
+          cp pubspec.yaml pubspec.yaml.bak
+          
           flutter create --platforms android --org com.sahjanand --project-name sahjanand .
+          
+          # Restore our original pubspec with correct dependencies
+          cp pubspec.yaml.bak pubspec.yaml
+          
+          # Copy our custom MainActivity with audio recording support
+          mkdir -p android/app/src/main/kotlin/com/sahjanand/sahjanand
+          cp native/MainActivity.kt android/app/src/main/kotlin/com/sahjanand/sahjanand/MainActivity.kt
+          
           # Set app display name to "Sahjanand"
           sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/debug/AndroidManifest.xml || true
@@ -39,20 +50,22 @@ jobs:
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.CAMERA"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <uses-permission android:name="android.permission.VIBRATE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>' android/app/src/main/AndroidManifest.xml
           # Enable cleartext traffic and hardware acceleration
           sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' android/app/src/main/AndroidManifest.xml
-          # Set compileSdk and minSdk for permission_handler and record plugin
+          # Set compileSdk and minSdk
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 34/' android/app/build.gradle
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/' android/app/build.gradle
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
           # Copy company logo as app icon
           cp assets/icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          # Clean resolve
+          rm -f pubspec.lock
           flutter pub get
 
-      - name: Build release APK
+      - name: Build APK
         working-directory: flutter_app
         run: flutter build apk --debug --split-per-abi
 
