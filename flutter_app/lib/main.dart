@@ -99,19 +99,52 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void _injectBridge() {
     _controller.runJavaScript('''
 (function(){
+  if(window.__flutterBridgeInjected) return;
+  window.__flutterBridgeInjected=true;
+
+  // 1) Override HTMLInputElement.click() for file inputs
+  var origClick=HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click=function(){
+    if(this.type==='file'){
+      try{FlutterBridge.postMessage(JSON.stringify({action:'pickFile',accept:this.accept||'*/*'}));}catch(e){}
+      return;
+    }
+    return origClick.apply(this,arguments);
+  };
+
+  // 2) Intercept click events on file inputs (fallback for direct clicks)
   document.addEventListener('click',function(e){
     var t=e.target;
-    if(t.tagName==='INPUT'&&t.type==='file'){e.preventDefault();e.stopPropagation();
-      FlutterBridge.postMessage(JSON.stringify({action:'pickFile',accept:t.accept||'*/*'}));return false;}
+    if(t&&t.tagName==='INPUT'&&t.type==='file'){
+      e.preventDefault();e.stopPropagation();
+      try{FlutterBridge.postMessage(JSON.stringify({action:'pickFile',accept:t.accept||'*/*'}));}catch(ex){}
+      return false;
+    }
   },true);
-  if(navigator.mediaDevices){
-    var orig=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia=function(c){
-      if(c&&c.audio&&!c.video){FlutterBridge.postMessage(JSON.stringify({action:'pickAudio'}));
-        return Promise.reject(new DOMException('native','NotAllowedError'));}
-      return orig(c);
-    };
-  }
+
+  // 3) Override getUserMedia completely - always route audio to native
+  if(!navigator.mediaDevices) navigator.mediaDevices={};
+  navigator.mediaDevices.getUserMedia=function(constraints){
+    if(constraints&&constraints.audio){
+      try{FlutterBridge.postMessage(JSON.stringify({action:'pickAudio'}));}catch(ex){}
+      return Promise.reject(new DOMException('Handled by native','NotAllowedError'));
+    }
+    return Promise.reject(new DOMException('Not supported in app','NotSupportedError'));
+  };
+
+  // 4) Override the toggleRecord function used by chat.js
+  //    This prevents the JS recorder from running and routes to native
+  window.toggleRecord=function(){
+    try{FlutterBridge.postMessage(JSON.stringify({action:'pickAudio'}));}catch(ex){}
+  };
+
+  // 5) Also override toggleReminderVoice and toggleRpVoice for reminder recording
+  window.toggleReminderVoice=function(){
+    try{FlutterBridge.postMessage(JSON.stringify({action:'pickAudio'}));}catch(ex){}
+  };
+  window.toggleRpVoice=function(){
+    try{FlutterBridge.postMessage(JSON.stringify({action:'pickAudio'}));}catch(ex){}
+  };
 })();
     ''');
   }
@@ -119,9 +152,11 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void _onBridgeMessage(JavaScriptMessage msg) async {
     try {
       final d = jsonDecode(msg.message);
-      if (d['action'] == 'pickFile') await _pickFile(d['accept'] ?? '*/*');
-      else if (d['action'] == 'pickAudio') await _showRecordingUI();
-    } catch (e) { debugPrint('[Bridge] $e'); }
+      final action = d['action'] ?? '';
+      debugPrint('[Bridge] Action: $action');
+      if (action == 'pickFile') await _pickFile(d['accept'] ?? '*/*');
+      else if (action == 'pickAudio') await _showRecordingUI();
+    } catch (e) { debugPrint('[Bridge] Error: $e'); }
   }
 
   // ── Voice Recording (WhatsApp-style) ──
@@ -227,8 +262,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Future<void> _pickFile(String accept) async {
     try {
       final picker = ImagePicker();
+      final acceptLower = accept.toLowerCase();
       
-      if (accept.contains('image')) {
+      if (acceptLower.contains('image')) {
         final src = await _srcDialog();
         if (src == null) return;
         if (src == ImageSource.camera) {
@@ -238,9 +274,14 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
           final fs = await picker.pickMultiImage(imageQuality: 80);
           for (final f in fs) { await _uploadXFile(f); }
         }
-      } else if (accept.contains('video')) {
-        final f = await picker.pickVideo(source: ImageSource.gallery);
+      } else if (acceptLower.contains('video')) {
+        final src = await _videoSrcDialog();
+        if (src == null) return;
+        final f = await picker.pickVideo(source: src, maxDuration: const Duration(minutes: 5));
         if (f != null) await _uploadXFile(f);
+      } else if (acceptLower.contains('audio')) {
+        // For audio file inputs, trigger native recording
+        await _showRecordingUI();
       } else {
         // Generic file - use FilePicker
         final r = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false);
@@ -253,8 +294,19 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       }
     } catch (e) {
       debugPrint('[PickFile] Error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick file: ${e.toString().split('\n').first}')),
+        );
+      }
     }
   }
+
+  Future<ImageSource?> _videoSrcDialog() => showDialog<ImageSource>(context: context, builder: (c) => AlertDialog(
+    title: const Text('Select Video Source'), content: Column(mainAxisSize: MainAxisSize.min, children: [
+      ListTile(leading: const Icon(Icons.videocam), title: const Text('Record Video'), onTap: () => Navigator.pop(c, ImageSource.camera)),
+      ListTile(leading: const Icon(Icons.video_library), title: const Text('Gallery'), onTap: () => Navigator.pop(c, ImageSource.gallery)),
+    ])));
 
   /// Upload an XFile (from image_picker) - handles content URIs properly
   Future<void> _uploadXFile(XFile xfile) async {
@@ -263,11 +315,27 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       final bytes = await xfile.readAsBytes();
       if (bytes.isEmpty) return;
       
-      final name = xfile.name.isNotEmpty ? xfile.name : 'file_${DateTime.now().millisecondsSinceEpoch}';
+      String name = xfile.name.isNotEmpty ? xfile.name : 'file_${DateTime.now().millisecondsSinceEpoch}';
+      
+      // Ensure file has an extension (Android content URIs sometimes don't)
+      if (!name.contains('.')) {
+        final mimeType = xfile.mimeType ?? '';
+        if (mimeType.contains('jpeg') || mimeType.contains('jpg')) name += '.jpg';
+        else if (mimeType.contains('png')) name += '.png';
+        else if (mimeType.contains('gif')) name += '.gif';
+        else if (mimeType.contains('webp')) name += '.webp';
+        else if (mimeType.contains('mp4')) name += '.mp4';
+        else if (mimeType.contains('webm')) name += '.webm';
+        else if (mimeType.contains('mov') || mimeType.contains('quicktime')) name += '.mov';
+        else name += '.jpg'; // default to jpg for images
+      }
       
       final tr = await _controller.runJavaScriptReturningResult('localStorage.getItem("sahjanand_token")');
       final token = tr.toString().replaceAll('"', '');
-      if (token == 'null' || token.isEmpty) return;
+      if (token == 'null' || token.isEmpty) {
+        debugPrint('[Upload] No auth token');
+        return;
+      }
 
       if (mounted) setState(() => _isUploading = true);
 
@@ -286,11 +354,22 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
           _sendMediaMessage(url, name);
         }
       } else {
-        debugPrint('[Upload] Server returned ${res.statusCode}');
+        final errBody = await res.stream.bytesToString();
+        debugPrint('[Upload] Server returned ${res.statusCode}: $errBody');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Upload failed (${res.statusCode})')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _isUploading = false);
       debugPrint('[Upload XFile] Error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload error: ${e.toString().split('\n').first}')),
+        );
+      }
     }
   }
 
@@ -335,18 +414,25 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   }
 
   void _sendMediaMessage(String url, String name) {
+    // Determine if this is an audio file
+    final nameLower = name.toLowerCase();
+    final isAudio = nameLower.endsWith('.m4a') || nameLower.endsWith('.mp3') || 
+                    nameLower.endsWith('.ogg') || nameLower.endsWith('.wav') || 
+                    nameLower.endsWith('.webm') || nameLower.endsWith('.aac');
+    
     _controller.runJavaScript('''
 (function(){
   var token=localStorage.getItem('sahjanand_token'),api=window.API||'';
   var fullUrl='$url';
   var fileName='$name';
+  var isAudioFile=${isAudio ? 'true' : 'false'};
 
   // Determine which section is active
   var jcPanel=document.getElementById('jcFormPanel');
   var jcVisible=jcPanel&&jcPanel.style.display!=='none'&&jcPanel.offsetParent!==null;
 
-  // If Job Card form is open, set image there (don't send chat message)
-  if(jcVisible){
+  // If Job Card form is open AND it's not an audio file, set image there
+  if(jcVisible&&!isAudioFile){
     var jcUrl=document.getElementById('jcImageUrl');
     if(jcUrl){jcUrl.value=fullUrl;}
     var jcPreview=document.getElementById('jcImagePreview');
@@ -354,20 +440,33 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     return;
   }
 
-  // Set reminder media fields (for reminder forms)
-  var x=document.getElementById('reminderMediaUrl');if(x)x.value=fullUrl;
-  x=document.getElementById('reminderMediaName');if(x)x.value=fileName;
-  x=document.getElementById('reminderMediaInfo');if(x)x.textContent=fileName;
-  x=document.getElementById('rpMediaUrl');if(x)x.value=fullUrl;
-  x=document.getElementById('rpMediaName');if(x)x.value=fileName;
-  x=document.getElementById('rpMediaInfo');if(x)x.textContent=fileName;
+  // Set reminder media fields (for reminder forms if visible)
+  var reminderForm=document.getElementById('reminderForm');
+  var reminderVisible=reminderForm&&reminderForm.style.display!=='none';
+  var rpForm=document.getElementById('rpFormPanel');
+  var rpVisible=rpForm&&rpForm.style.display!=='none';
 
-  // Send as chat message if in a group chat
+  if(reminderVisible){
+    var x=document.getElementById('reminderMediaUrl');if(x)x.value=fullUrl;
+    x=document.getElementById('reminderMediaName');if(x)x.value=fileName;
+    x=document.getElementById('reminderMediaInfo');if(x)x.textContent=fileName;
+    return;
+  }
+  if(rpVisible){
+    var x=document.getElementById('rpMediaUrl');if(x)x.value=fullUrl;
+    x=document.getElementById('rpMediaName');if(x)x.value=fileName;
+    x=document.getElementById('rpMediaInfo');if(x)x.textContent=fileName;
+    return;
+  }
+
+  // Default: send as chat message if in a group chat
   var gid=window.currentGroupId;
   if(!gid||!token)return;
   var ext=fileName.split('.').pop().toLowerCase();
-  var t='image';if(['mp4','mov','webm','avi','3gp'].indexOf(ext)>=0)t='video';
-  if(['mp3','ogg','wav','m4a','webm','aac','amr'].indexOf(ext)>=0)t='voice';
+  var t='image';
+  if(['mp4','mov','webm','avi','3gp'].indexOf(ext)>=0)t='video';
+  if(['mp3','ogg','wav','m4a','aac','amr','webm'].indexOf(ext)>=0)t='voice';
+  if(isAudioFile)t='voice';
   fetch(api+'/api/chat/groups/'+gid+'/messages',{method:'POST',
     headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
     body:JSON.stringify({msg_type:t,media_url:fullUrl,media_name:fileName,content:''})
