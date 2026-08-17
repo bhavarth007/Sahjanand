@@ -916,16 +916,8 @@ async function checkGlobalNewReminders() {
     if (!res.ok) return;
     const items = await res.json();
 
-    // Show notification for new reminders assigned to this user
-    items.forEach(r => {
-      if (r.remind_to !== userData.id) return;
-      const key = `reminder_notif_seen_${r.id}`;
-      if (localStorage.getItem(key)) return;
-      localStorage.setItem(key, '1');
-      showGlobalReminderAlert(r, false);
-    });
-
-    // Update bell badge count
+    // Only update the bell badge - do NOT show popup alerts for existing reminders
+    // The popup alerts are handled by checkGlobalUpcomingAlerts() at the right time
     const pendingCount = items.filter(r => r.remind_to === userData.id).length;
     localStorage.setItem('notif_pending_count', String(pendingCount));
     updateNotificationBadge(pendingCount);
@@ -1021,6 +1013,9 @@ function escHtml(s) {
 
 function playGlobalAlertSound() {
   try {
+    // Vibrate phone (works on Android WebView)
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+    
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const now = ctx.currentTime;
     for (let t = 0; t < 3; t += 0.4) {

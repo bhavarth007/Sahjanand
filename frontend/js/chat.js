@@ -151,8 +151,6 @@ async function selectGroup(gid) {
   // Load group reminders
   window.currentGroupId = gid;
   if (typeof loadGroupReminders === 'function') loadGroupReminders('pending');
-  if (typeof checkReminderNotifications === 'function') checkReminderNotifications();
-  if (typeof startReminderAlertChecker === 'function') startReminderAlertChecker();
   if (typeof initFilters === 'function') initFilters();
 }
 

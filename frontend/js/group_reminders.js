@@ -365,22 +365,10 @@ async function deleteGroupReminder(rid) {
 // Notification + Alert 2 min before reminder time
 // ═══════════════════════════════════════════════════════════════
 async function checkReminderNotifications() {
-  const gid = window.currentGroupId;
-  if (!gid) return;
-  const token = localStorage.getItem('sahjanand_token');
-  try {
-    const res = await fetch(`${R_API}/api/chat/groups/${gid}/my-reminders`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const items = await res.json();
-    items.forEach(r => {
-      const key = `reminder_notif_${r.id}`;
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, '1');
-      showReminderNotification(r);
-    });
-  } catch {}
+  // This function is no longer called on group select.
+  // The global checker in dashboard.js handles all reminder alerts.
+  // Kept for backward compatibility but does nothing.
+  return;
 }
 
 // Check every 30 seconds for reminders approaching (2 min before)
@@ -445,8 +433,11 @@ function showReminderNotification(r, withBuzz) {
   `;
   document.body.appendChild(el);
 
-  // Play alert sound (5 seconds buzz)
-  if (withBuzz !== false) playAlertSound();
+  // Only play alert sound when explicitly requested (deadline alerts)
+  if (withBuzz === true) playAlertSound();
+
+  // Auto-dismiss non-urgent notifications after 10 seconds
+  if (!withBuzz) setTimeout(() => { if (el.parentElement) el.remove(); }, 10000);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -454,6 +445,9 @@ function showReminderNotification(r, withBuzz) {
 // ═══════════════════════════════════════════════════════════════
 function playAlertSound() {
   try {
+    // Vibrate phone (works on Android WebView)
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const now = ctx.currentTime;
     const duration = 5; // 5 seconds total

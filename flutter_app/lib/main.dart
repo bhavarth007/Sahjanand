@@ -153,10 +153,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     try {
       final d = jsonDecode(msg.message);
       final action = d['action'] ?? '';
-      debugPrint('[Bridge] Action: $action');
       if (action == 'pickFile') await _pickFile(d['accept'] ?? '*/*');
       else if (action == 'pickAudio') await _showRecordingUI();
-    } catch (e) { debugPrint('[Bridge] Error: $e'); }
+    } catch (e) { debugPrint('[Bridge] $e'); }
   }
 
   // ── Voice Recording (WhatsApp-style) ──
@@ -333,7 +332,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       final tr = await _controller.runJavaScriptReturningResult('localStorage.getItem("sahjanand_token")');
       final token = tr.toString().replaceAll('"', '');
       if (token == 'null' || token.isEmpty) {
-        debugPrint('[Upload] No auth token');
         return;
       }
 
@@ -355,7 +353,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
         }
       } else {
         final errBody = await res.stream.bytesToString();
-        debugPrint('[Upload] Server returned ${res.statusCode}: $errBody');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Upload failed (${res.statusCode})')),
@@ -364,7 +361,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       }
     } catch (e) {
       if (mounted) setState(() => _isUploading = false);
-      debugPrint('[Upload XFile] Error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Upload error: ${e.toString().split('\n').first}')),
