@@ -137,9 +137,17 @@ function collectTakaData() {
   return rows;
 }
 
-function getNextJCardNo() {
+async function getNextJCardNo() {
+  const token = localStorage.getItem('sahjanand_token');
+  try {
+    const res = await fetch(`${JC_API}/api/job-cards/next-number`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) {
+      const data = await res.json();
+      return data.next_number || '1';
+    }
+  } catch (e) {}
+  // Fallback: compute from loaded cards
   if (!jcCards.length) return '1';
-  // Find the highest j_card_no number
   let max = 0;
   jcCards.forEach(c => {
     const num = parseInt(c.j_card_no, 10);
@@ -148,15 +156,15 @@ function getNextJCardNo() {
   return String(max + 1);
 }
 
-function openNewJobCard() {
+async function openNewJobCard() {
   jcEditingId = null;
   clearJobCardForm();
   renderProgramTable(null);
   renderTakaTable(null);
-  // Auto-generate J.Card No
+  // Auto-generate J.Card No from backend
   const jcNoEl = document.getElementById('jc_j_card_no');
   if (jcNoEl) {
-    jcNoEl.value = getNextJCardNo();
+    jcNoEl.value = await getNextJCardNo();
     jcNoEl.readOnly = true;
   }
   // Set today's date as default

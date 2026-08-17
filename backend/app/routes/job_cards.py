@@ -2,7 +2,7 @@
 Job Card Voucher API — CRUD for production job cards
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -70,6 +70,33 @@ class JobCardOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Helper: get next J.Card No ──
+async def _next_j_card_no(db: AsyncSession) -> str:
+    """Returns the next auto-incremented j_card_no (as string), starting from 1."""
+    # Get all j_card_no values and find the max numeric one
+    result = await db.execute(select(JobCard.j_card_no))
+    all_numbers = result.scalars().all()
+    max_val = 0
+    for val in all_numbers:
+        if val:
+            try:
+                num = int(val)
+                if num > max_val:
+                    max_val = num
+            except (ValueError, TypeError):
+                pass
+    return str(max_val + 1)
+
+
+# ── GET next J.Card number (for frontend display) ──
+@router.get("/next-number")
+async def get_next_number(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return {"next_number": await _next_j_card_no(db)}
+
+
 # ── GET all job cards ──
 @router.get("/", response_model=List[JobCardOut])
 async def list_job_cards(
@@ -106,7 +133,11 @@ async def create_job_card(
     if not body.image_url:
         raise HTTPException(400, "Image is required. Please upload an image first.")
 
-    card = JobCard(user_id=current_user.id, **body.model_dump())
+    # Auto-generate j_card_no on server side (authoritative)
+    body_data = body.model_dump()
+    body_data["j_card_no"] = await _next_j_card_no(db)
+
+    card = JobCard(user_id=current_user.id, **body_data)
     db.add(card)
     await db.flush()
     await db.refresh(card)

@@ -337,21 +337,41 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void _sendMediaMessage(String url, String name) {
     _controller.runJavaScript('''
 (function(){
-  var token=localStorage.getItem('sahjanand_token'),gid=window.currentGroupId,api=window.API||'';
+  var token=localStorage.getItem('sahjanand_token'),api=window.API||'';
+  var fullUrl='$url';
+  var fileName='$name';
+
+  // Determine which section is active
+  var jcPanel=document.getElementById('jcFormPanel');
+  var jcVisible=jcPanel&&jcPanel.style.display!=='none'&&jcPanel.offsetParent!==null;
+
+  // If Job Card form is open, set image there (don't send chat message)
+  if(jcVisible){
+    var jcUrl=document.getElementById('jcImageUrl');
+    if(jcUrl){jcUrl.value=fullUrl;}
+    var jcPreview=document.getElementById('jcImagePreview');
+    if(jcPreview){jcPreview.innerHTML='<img src="'+fullUrl+'" style="max-height:80px;border-radius:8px;" /> <span style="color:green;font-size:.75rem;">Uploaded</span>';}
+    return;
+  }
+
+  // Set reminder media fields (for reminder forms)
+  var x=document.getElementById('reminderMediaUrl');if(x)x.value=fullUrl;
+  x=document.getElementById('reminderMediaName');if(x)x.value=fileName;
+  x=document.getElementById('reminderMediaInfo');if(x)x.textContent=fileName;
+  x=document.getElementById('rpMediaUrl');if(x)x.value=fullUrl;
+  x=document.getElementById('rpMediaName');if(x)x.value=fileName;
+  x=document.getElementById('rpMediaInfo');if(x)x.textContent=fileName;
+
+  // Send as chat message if in a group chat
+  var gid=window.currentGroupId;
   if(!gid||!token)return;
-  var ext='$name'.split('.').pop().toLowerCase();
+  var ext=fileName.split('.').pop().toLowerCase();
   var t='image';if(['mp4','mov','webm','avi','3gp'].indexOf(ext)>=0)t='video';
   if(['mp3','ogg','wav','m4a','webm','aac','amr'].indexOf(ext)>=0)t='voice';
   fetch(api+'/api/chat/groups/'+gid+'/messages',{method:'POST',
     headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-    body:JSON.stringify({msg_type:t,media_url:'$url',media_name:'$name',content:''})
+    body:JSON.stringify({msg_type:t,media_url:fullUrl,media_name:fileName,content:''})
   }).then(function(){if(typeof refreshChatMessages==='function')refreshChatMessages();});
-  var x=document.getElementById('reminderMediaUrl');if(x)x.value='$url';
-  x=document.getElementById('reminderMediaName');if(x)x.value='$name';
-  x=document.getElementById('reminderMediaInfo');if(x)x.textContent='$name';
-  x=document.getElementById('rpMediaUrl');if(x)x.value='$url';
-  x=document.getElementById('rpMediaName');if(x)x.value='$name';
-  x=document.getElementById('rpMediaInfo');if(x)x.textContent='$name';
 })();
     ''');
   }

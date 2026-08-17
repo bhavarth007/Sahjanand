@@ -1278,6 +1278,7 @@ tbody tr:hover td { background: var(--bg-light); }
 .jc-field {
   display: flex;
   flex-direction: column;
+  min-width: 0; /* prevent overflow */
 }
 
 .jc-field label {
@@ -1287,11 +1288,12 @@ tbody tr:hover td { background: var(--bg-light); }
   text-transform: uppercase;
   letter-spacing: .4px;
   margin-bottom: 4px;
+  white-space: nowrap;
 }
 
 .jc-field input,
 .jc-field textarea {
-  padding: 9px 12px;
+  padding: 10px 12px;
   border: 1.5px solid var(--border);
   border-radius: 8px;
   font-size: .88rem;
@@ -1299,6 +1301,8 @@ tbody tr:hover td { background: var(--bg-light); }
   outline: none;
   background: var(--bg-light);
   transition: border-color .15s;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .jc-field input:focus,
@@ -1310,34 +1314,115 @@ tbody tr:hover td { background: var(--bg-light); }
 .jc-form-row {
   display: grid;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  width: 100%;
 }
 .jc-row-3col { grid-template-columns: 1fr 1fr 1fr; }
 .jc-row-2col { grid-template-columns: 1fr 1fr; }
 
-@media (max-width: 600px) {
+/* Tablet */
+@media (max-width: 768px) {
   .jc-row-3col { grid-template-columns: 1fr 1fr; }
-  .jc-row-2col { grid-template-columns: 1fr; }
+  .jc-row-2col { grid-template-columns: 1fr 1fr; }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .jc-row-3col { grid-template-columns: 1fr 1fr; }
+  .jc-row-2col { grid-template-columns: 1fr 1fr; }
+
   .jc-field input,
   .jc-field textarea {
-    font-size: .82rem;
-    padding: 8px 10px;
+    font-size: 16px;
+    padding: 10px;
   }
-  .jc-table { font-size: .72rem; min-width: 500px; }
-  .jc-table th, .jc-table td { padding: 6px 5px; }
-  .jc-cell { font-size: .75rem; padding: 5px 6px !important; }
+
+  #jcFormPanel {
+    padding: 14px !important;
+    margin: 0 -4px !important;
+    border-radius: 10px !important;
+  }
 }
 
-@media (max-width: 400px) {
+@media (max-width: 360px) {
   .jc-row-3col { grid-template-columns: 1fr; }
+  .jc-row-2col { grid-template-columns: 1fr; }
 }
 
-/* Job Card Row */
+/* Job Card Tables */
+.jc-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.jc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  min-width: 420px;
+}
+
+.jc-table th {
+  background: #f9f5f3;
+  padding: 8px 8px;
+  text-align: left;
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.jc-table td {
+  border: 1px solid var(--border);
+  padding: 0;
+}
+
+.jc-td-fixed {
+  padding: 7px 8px !important;
+  font-weight: 600;
+  font-size: .76rem;
+  background: #fdf8f5;
+  white-space: nowrap;
+  color: var(--text-primary);
+  min-width: 80px;
+}
+
+.jc-cell {
+  width: 100%;
+  border: none;
+  padding: 8px 8px;
+  font-size: .82rem;
+  font-family: inherit;
+  outline: none;
+  background: transparent;
+  box-sizing: border-box;
+  min-width: 60px;
+}
+
+.jc-cell:focus {
+  background: #fff8f0;
+  box-shadow: inset 0 0 0 1.5px var(--primary);
+}
+
+@media (max-width: 480px) {
+  .jc-table { min-width: 380px; font-size: .75rem; }
+  .jc-table th { padding: 6px 6px; font-size: .62rem; }
+  .jc-td-fixed { padding: 6px 6px !important; font-size: .72rem; min-width: 70px; }
+  .jc-cell { padding: 7px 6px; font-size: 14px; min-width: 50px; }
+}
+
+/* Job Card Row (list items) */
 .jc-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 12px 14px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -1444,93 +1529,78 @@ tbody tr:hover td { background: var(--bg-light); }
   font-size: .9rem;
 }
 
-@media (max-width: 600px) {
-  #jcFormPanel .jc-field input,
-  #jcFormPanel .jc-field textarea {
-    font-size: 16px !important;
-  }
-  #jcFormPanel [style*="grid-template-columns: 1fr 1fr 1fr"] {
-    grid-template-columns: 1fr !important;
-  }
-  #jcFormPanel [style*="grid-template-columns: 1fr 1fr"] {
-    grid-template-columns: 1fr !important;
-  }
-  #jcFormPanel {
-    padding: 14px !important;
-    margin: 0 -8px !important;
-    border-radius: 10px !important;
-  }
-  .jc-table {
-    min-width: 560px;
-  }
-  .jc-cell {
-    font-size: 14px !important;
-    padding: 6px 8px;
-  }
+@media (max-width: 480px) {
   .jc-row {
-    padding: 10px 12px;
-    gap: 10px;
+    padding: 10px 10px;
+    gap: 8px;
   }
-  .jc-row-img { width: 40px; height: 40px; }
+  .jc-row-img { width: 38px; height: 38px; }
   .jc-row-title { font-size: .82rem; }
   .jc-row-sub { font-size: .72rem; }
+  .jc-row-num { width: 24px; height: 24px; font-size: .68rem; }
 }
 
-/* Job Card Tables */
-.jc-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .82rem;
-  min-width: 480px;
-}
-
-.jc-table th {
-  background: #f9f5f3;
-  padding: 8px 10px;
-  text-align: left;
-  font-size: .68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .3px;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.jc-table td {
-  border: 1px solid var(--border);
-  padding: 0;
-}
-
-.jc-td-fixed {
-  padding: 8px 10px !important;
-  font-weight: 600;
+/* Job Card form section labels */
+.jc-section-label {
   font-size: .78rem;
-  background: #fdf8f5;
-  white-space: nowrap;
-  color: var(--text-primary);
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin: 18px 0 8px;
 }
 
-.jc-cell {
-  width: 100%;
-  border: none;
-  padding: 8px 10px;
-  font-size: .82rem;
-  font-family: inherit;
-  outline: none;
-  background: transparent;
+/* Image upload area */
+.jc-upload-area {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  background: #f9f5f3;
 }
 
-.jc-cell:focus {
-  background: #fff8f0;
-  box-shadow: inset 0 0 0 1.5px var(--primary);
+.jc-upload-area label {
+  font-size: .76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
 }
 
-#jcTakaTable .jc-table,
-#jcProgramTable {
-  min-width: 480px;
+.jc-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
 }
 
-@media (max-width: 600px) {
-  .jc-cell { font-size: 16px; }
+/* Form action buttons */
+.jc-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+@media (max-width: 480px) {
+  .jc-form-actions {
+    flex-direction: column;
+  }
+  .jc-form-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Prevent overflow in samples/job card section on mobile */
+#section-samples {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+#section-samples .card {
+  max-width: 100%;
+  overflow: hidden;
 }

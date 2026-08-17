@@ -451,15 +451,15 @@
 
         <!-- PROGRAM MATCHING TABLE -->
         <div style="margin:20px 0 12px;">
-          <label style="font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;">Program Matching</label>
-          <div style="overflow-x:auto;margin-top:8px;">
+          <label class="jc-section-label">Program Matching</label>
+          <div class="jc-table-wrap">
             <table class="jc-table" id="jcProgramTable">
               <thead>
                 <tr>
-                  <th style="width:110px;">CMP TYPE</th>
-                  <th>COLOR NAME</th>
-                  <th>YARN/BEAM NAME</th>
-                  <th style="width:110px;">WEIGHT/MTR</th>
+                  <th style="min-width:90px;">CMP TYPE</th>
+                  <th style="min-width:90px;">COLOR NAME</th>
+                  <th style="min-width:110px;">YARN/BEAM NAME</th>
+                  <th style="min-width:90px;">WEIGHT/MTR</th>
                 </tr>
               </thead>
               <tbody id="jcProgramBody"></tbody>
@@ -497,22 +497,22 @@
 
         <!-- TAKA TABLE -->
         <div style="margin:20px 0 12px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <label style="font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;">Taka Details</label>
-            <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:.75rem;" onclick="addTakaRow()"><i class="fa-solid fa-plus"></i> Add Row</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <label class="jc-section-label" style="margin:0;">Taka Details</label>
+            <button type="button" class="btn-secondary" style="padding:5px 12px;font-size:.75rem;" onclick="addTakaRow()"><i class="fa-solid fa-plus"></i> Add Row</button>
           </div>
-          <div style="overflow-x:auto;margin-top:8px;">
+          <div class="jc-table-wrap">
             <table class="jc-table" id="jcTakaTable">
               <thead>
                 <tr>
-                  <th>TAKA NO</th>
-                  <th>CUT</th>
-                  <th>PCS</th>
-                  <th>MTR</th>
-                  <th>WEIGHT</th>
-                  <th>COLOR</th>
-                  <th>REMARK</th>
-                  <th style="width:40px;"></th>
+                  <th style="min-width:60px;">TAKA NO</th>
+                  <th style="min-width:50px;">CUT</th>
+                  <th style="min-width:50px;">PCS</th>
+                  <th style="min-width:50px;">MTR</th>
+                  <th style="min-width:60px;">WEIGHT</th>
+                  <th style="min-width:60px;">COLOR</th>
+                  <th style="min-width:70px;">REMARK</th>
+                  <th style="width:36px;"></th>
                 </tr>
               </thead>
               <tbody id="jcTakaBody"></tbody>
@@ -521,9 +521,9 @@
         </div>
 
         <!-- Image Upload (Required) -->
-        <div style="margin-bottom:16px;padding:12px;border:1.5px dashed var(--border);border-radius:10px;background:#f9f5f3;">
-          <label style="font-size:.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Job Card Image <span style="color:var(--primary);">*</span> (Required)</label>
-          <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+        <div class="jc-upload-area">
+          <label>Job Card Image <span style="color:var(--primary);">*</span> (Required)</label>
+          <div class="jc-upload-row">
             <button type="button" class="btn-primary" style="padding:8px 16px;font-size:.82rem;" onclick="document.getElementById('jcImageInput').click()">
               <i class="fa-solid fa-camera"></i> Upload Image
             </button>
@@ -534,7 +534,7 @@
         </div>
 
         <!-- Action buttons -->
-        <div style="display:flex;justify-content:flex-end;gap:10px;">
+        <div class="jc-form-actions">
           <button class="btn-secondary" onclick="closeJobCardForm()">Cancel</button>
           <button class="btn-primary" onclick="saveJobCard()"><i class="fa-solid fa-check"></i> Save Job Card</button>
         </div>
