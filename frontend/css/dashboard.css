@@ -1306,6 +1306,32 @@ tbody tr:hover td { background: var(--bg-light); }
   border-color: var(--primary);
 }
 
+/* Responsive form rows */
+.jc-form-row {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.jc-row-3col { grid-template-columns: 1fr 1fr 1fr; }
+.jc-row-2col { grid-template-columns: 1fr 1fr; }
+
+@media (max-width: 600px) {
+  .jc-row-3col { grid-template-columns: 1fr 1fr; }
+  .jc-row-2col { grid-template-columns: 1fr; }
+  .jc-field input,
+  .jc-field textarea {
+    font-size: .82rem;
+    padding: 8px 10px;
+  }
+  .jc-table { font-size: .72rem; min-width: 500px; }
+  .jc-table th, .jc-table td { padding: 6px 5px; }
+  .jc-cell { font-size: .75rem; padding: 5px 6px !important; }
+}
+
+@media (max-width: 400px) {
+  .jc-row-3col { grid-template-columns: 1fr; }
+}
+
 /* Job Card Row */
 .jc-row {
   display: flex;

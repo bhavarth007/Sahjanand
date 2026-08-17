@@ -406,14 +406,14 @@
         <h4 id="jcFormTitle" style="margin:0 0 16px;font-weight:700;">New Job Card Voucher</h4>
 
         <!-- Row 1: Job Name, J.Card No, JC Date -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="jc-form-row jc-row-3col">
           <div class="jc-field">
             <label>Job Name</label>
             <input type="text" id="jc_job_name" placeholder="e.g. 01-MCHN" />
           </div>
           <div class="jc-field">
             <label>J.Card No.</label>
-            <input type="text" id="jc_j_card_no" placeholder="e.g. 2219" />
+            <input type="text" id="jc_j_card_no" placeholder="Auto" readonly />
           </div>
           <div class="jc-field">
             <label>J.C Date</label>
@@ -422,7 +422,7 @@
         </div>
 
         <!-- Row 2: Quality, Design No, G.Pick -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="jc-form-row jc-row-3col">
           <div class="jc-field">
             <label>Quality</label>
             <input type="text" id="jc_quality" placeholder="e.g. NYLON BARBARY" />
@@ -438,7 +438,7 @@
         </div>
 
         <!-- Row 3: Repeat MTR, Repeat PCS -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="jc-form-row jc-row-2col">
           <div class="jc-field">
             <label>Repeat MTR</label>
             <input type="text" id="jc_repeat_mtr" placeholder="66.90" />
@@ -468,7 +468,7 @@
         </div>
 
         <!-- Row: Start Date, End Date, OP Name -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;margin-top:16px;">
+        <div class="jc-form-row jc-row-3col" style="margin-top:16px;">
           <div class="jc-field">
             <label>Start Date</label>
             <input type="date" id="jc_start_date" />
@@ -484,7 +484,7 @@
         </div>
 
         <!-- Row: Remark, Supervisor Sign -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="jc-form-row jc-row-2col">
           <div class="jc-field">
             <label>Remark</label>
             <textarea id="jc_remark" rows="2" placeholder="Any remarks..." style="resize:vertical;"></textarea>

@@ -137,11 +137,32 @@ function collectTakaData() {
   return rows;
 }
 
+function getNextJCardNo() {
+  if (!jcCards.length) return '1';
+  // Find the highest j_card_no number
+  let max = 0;
+  jcCards.forEach(c => {
+    const num = parseInt(c.j_card_no, 10);
+    if (!isNaN(num) && num > max) max = num;
+  });
+  return String(max + 1);
+}
+
 function openNewJobCard() {
   jcEditingId = null;
   clearJobCardForm();
   renderProgramTable(null);
   renderTakaTable(null);
+  // Auto-generate J.Card No
+  const jcNoEl = document.getElementById('jc_j_card_no');
+  if (jcNoEl) {
+    jcNoEl.value = getNextJCardNo();
+    jcNoEl.readOnly = true;
+  }
+  // Set today's date as default
+  const today = new Date().toISOString().split('T')[0];
+  const dateEl = document.getElementById('jc_jc_date');
+  if (dateEl && !dateEl.value) dateEl.value = today;
   document.getElementById('jcFormPanel').style.display = 'block';
   document.getElementById('jcFormTitle').textContent = 'New Job Card Voucher';
 }
@@ -157,6 +178,9 @@ function editJobCard(id) {
     const el = document.getElementById('jc_' + f);
     if (el) el.value = card[f] || '';
   });
+  // Make J.Card No readonly
+  const jcNoEl = document.getElementById('jc_j_card_no');
+  if (jcNoEl) jcNoEl.readOnly = true;
   document.getElementById('jcImageUrl').value = card.image_url || '';
   const preview = document.getElementById('jcImagePreview');
   preview.innerHTML = card.image_url ? `<img src="${esc(card.image_url)}" style="max-height:80px;border-radius:8px;" />` : '';
