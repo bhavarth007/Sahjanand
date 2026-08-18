@@ -26,6 +26,13 @@ async def lifespan(app: FastAPI):
         await seed()
     except Exception as e:
         print(f"⚠️ Seed skipped: {e}")
+    # Ensure Supabase Storage bucket exists
+    try:
+        from app.storage import ensure_bucket
+        ensure_bucket()
+        print("✅ Supabase Storage bucket ready.")
+    except Exception as e:
+        print(f"⚠️ Storage bucket setup: {e}")
     yield
     await close_db()
 

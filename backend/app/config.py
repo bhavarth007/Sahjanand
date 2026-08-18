@@ -5,14 +5,16 @@ from functools import lru_cache
 class Settings(BaseSettings):
     SECRET_KEY: str = "changeme-use-env"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours for dev convenience
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
-    # Database — auto-detected:
-    #   Local:      sqlite+aiosqlite:///./sahjanand.db
-    #   Production: Render injects DATABASE_URL as postgres://...
-    DATABASE_URL: str = "sqlite+aiosqlite:///./sahjanand.db"
+    # Database (Supabase PostgreSQL)
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@db.xxx.supabase.co:5432/postgres"
 
-    # Cloudinary (image storage)
+    # Supabase Storage
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_KEY: str = ""
+
+    # Cloudinary (optional backup)
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
@@ -21,15 +23,12 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://127.0.0.1:5500"
     PRODUCTION_URL: str = ""
 
-    # Logo — local path used in dev, Cloudinary URL used in production
     LOGO_URL: str = "/assets/images/logo.png"
 
     @property
     def async_database_url(self) -> str:
         """
-        Render provides DATABASE_URL as postgres://...
-        SQLAlchemy asyncpg requires postgresql+asyncpg://...
-        This property fixes the URL automatically.
+        Converts DATABASE_URL to asyncpg format if needed.
         """
         url = self.DATABASE_URL
         if url.startswith("postgres://"):

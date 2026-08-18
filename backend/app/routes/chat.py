@@ -434,7 +434,8 @@ async def upload_media(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
-    # Note: chat_can_send check removed — uploads are needed for reminders too
+    from app.storage import upload_file
+
     ext = Path(file.filename or "").suffix.lower()
     msg_type = None
     for t, exts in ALLOWED_EXTENSIONS.items():
@@ -446,9 +447,10 @@ async def upload_media(
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(413, "File too large (max 50 MB).")
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    (UPLOAD_DIR / unique_name).write_bytes(data)
-    return {"media_url": f"/uploads/{unique_name}", "media_name": file.filename, "msg_type": msg_type}
+
+    # Upload to Supabase Storage (returns public CDN URL)
+    result = upload_file(data, file.filename or f"file{ext}")
+    return {"media_url": result["media_url"], "media_name": result["media_name"], "msg_type": result["msg_type"]}
 
 
 # ═══════════════════════════════════════════════════════════════

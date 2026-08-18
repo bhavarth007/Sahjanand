@@ -13,8 +13,9 @@ httpx==0.27.0
 # Database
 sqlalchemy==2.0.30
 alembic==1.13.1
-# Local dev (SQLite, no install needed)
 aiosqlite==0.20.0
-# Production (PostgreSQL on Render)
 asyncpg==0.29.0
 psycopg2-binary==2.9.9
+
+# Supabase Storage
+supabase==2.6.0
