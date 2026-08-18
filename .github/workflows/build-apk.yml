@@ -27,6 +27,10 @@ jobs:
           flutter-version: '3.24.5'
           channel: 'stable'
 
+      - name: Install Android SDK Platform 35
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35"
+
       - name: Create Android project and get deps
         working-directory: flutter_app
         run: |
@@ -95,6 +99,35 @@ jobs:
           </manifest>
           MANIFEST
           
+          # ── Write settings.gradle with correct modern versions ──
+          cat > android/settings.gradle << 'SETTINGS'
+          pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  file("local.properties").withInputStream { properties.load(it) }
+                  def flutterSdkPath = properties.getProperty("flutter.sdk")
+                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
+              }()
+
+              includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          plugins {
+              id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+              id "com.android.application" version "8.1.0" apply false
+              id "org.jetbrains.kotlin.android" version "1.9.0" apply false
+          }
+
+          include ":app"
+          SETTINGS
+          
           # ── Write app/build.gradle with Firebase plugin ──
           cat > android/app/build.gradle << 'BUILDGRADLE'
           plugins {
@@ -106,7 +139,7 @@ jobs:
           
           android {
               namespace = "com.sahjanand.sahjanand"
-              compileSdk = 34
+              compileSdk = 35
               ndkVersion = flutter.ndkVersion
           
               compileOptions {
@@ -121,7 +154,7 @@ jobs:
               defaultConfig {
                   applicationId = "com.sahjanand.sahjanand"
                   minSdk = 23
-                  targetSdk = 34
+                  targetSdk = 35
                   versionCode = flutter.versionCode
                   versionName = flutter.versionName
               }
@@ -138,9 +171,12 @@ jobs:
           }
           BUILDGRADLE
           
-          # ── Add Google Services plugin to settings.gradle (only if not already present) ──
-          grep -q 'com.google.gms.google-services' android/settings.gradle || \
-            sed -i '/id "org.jetbrains.kotlin.android"/a \    id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
+          # ── Write gradle.properties for compatibility ──
+          cat > android/gradle.properties << 'PROPS'
+          org.gradle.jvmargs=-Xmx4G -XX:+HeapDumpOnOutOfMemoryError
+          android.useAndroidX=true
+          android.enableJetifier=true
+          PROPS
           
           # ── Write google-services.json placeholder ──
           cat > android/app/google-services.json << 'GSJSON'
