@@ -55,8 +55,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
   bool _isUploading = false;
-
-  // Notification banner state
   String? _notifMessage;
   Timer? _notifTimer;
 
@@ -118,160 +116,108 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       final ac = _controller.platform as AndroidWebViewController;
       ac.setMediaPlaybackRequiresUserGesture(false);
       ac.setOnPlatformPermissionRequest((r) => r.grant());
-      // This enables the native Android file chooser for <input type="file">
-      ac.setOnShowFileSelector(_androidFilePicker);
     }
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // NATIVE FILE CHOOSER — called by Android WebView for <input type="file">
-  // This is the CORRECT way to handle file uploads in Android WebView.
-  // ═══════════════════════════════════════════════════════════════
-  Future<List<String>> _androidFilePicker(FileSelectorParams params) async {
-    try {
-      final accept = params.acceptTypes.join(',').toLowerCase();
-
-      if (accept.contains('image')) {
-        return await _pickImageFiles();
-      } else if (accept.contains('video')) {
-        return await _pickVideoFiles();
-      } else if (accept.contains('audio')) {
-        // For audio inputs, show native file picker for audio files
-        return await _pickAudioFiles();
-      } else {
-        // Generic file picker
-        return await _pickGenericFiles();
-      }
-    } catch (e) {
-      debugPrint('[FilePicker] Error: $e');
-      return [];
-    }
-  }
-
-  Future<List<String>> _pickImageFiles() async {
-    final src = await _srcDialog();
-    if (src == null) return [];
-
-    final picker = ImagePicker();
-    if (src == ImageSource.camera) {
-      final f = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
-      if (f != null) return [f.path];
-    } else {
-      final fs = await picker.pickMultiImage(imageQuality: 85);
-      if (fs.isNotEmpty) return fs.map((f) => f.path).toList();
-    }
-    return [];
-  }
-
-  Future<List<String>> _pickVideoFiles() async {
-    final src = await _videoSrcDialog();
-    if (src == null) return [];
-
-    final picker = ImagePicker();
-    final f = await picker.pickVideo(source: src, maxDuration: const Duration(minutes: 5));
-    if (f != null) return [f.path];
-    return [];
-  }
-
-  Future<List<String>> _pickAudioFiles() async {
-    final r = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: false,
-    );
-    if (r != null && r.files.isNotEmpty && r.files.single.path != null) {
-      return [r.files.single.path!];
-    }
-    return [];
-  }
-
-  Future<List<String>> _pickGenericFiles() async {
-    final r = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false);
-    if (r != null && r.files.isNotEmpty && r.files.single.path != null) {
-      return [r.files.single.path!];
-    }
-    return [];
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // JS BRIDGE — only needed for audio recording and notifications
-  // File uploads are handled natively by Android WebView above.
+  // JS BRIDGE — Intercepts file inputs, audio recording, WebSocket messages
+  // This is the ONLY reliable way on Android WebView.
   // ═══════════════════════════════════════════════════════════════
   void _injectBridge() {
     _controller.runJavaScript('''
 (function(){
-  if(window.__flutterBridgeV2) return;
-  window.__flutterBridgeV2=true;
+  if(window.__sahjanandBridge) return;
+  window.__sahjanandBridge=true;
 
-  // Override audio recording functions to use native recorder
-  window.toggleRecord=function(){
-    FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
-  };
-  window.toggleReminderVoice=function(){
-    FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
-  };
-  window.toggleRpVoice=function(){
-    FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
-  };
-
-  // Override getUserMedia to route audio to native
-  if(!navigator.mediaDevices) navigator.mediaDevices={};
-  var _origGUM=navigator.mediaDevices.getUserMedia;
-  navigator.mediaDevices.getUserMedia=function(c){
-    if(c&&c.audio&&!c.video){
-      FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
-      return Promise.reject(new DOMException('Native recording','NotAllowedError'));
+  // ─── 1. Intercept ALL file input clicks ───
+  // Override .click() on file inputs so Flutter handles picking + uploading
+  var _origClick = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function(){
+    if(this.type === 'file'){
+      var accept = (this.accept || '*/*').toLowerCase();
+      FlutterBridge.postMessage(JSON.stringify({action:'pickFile', accept:accept}));
+      return;
     }
-    if(_origGUM) return _origGUM.call(navigator.mediaDevices,c);
+    return _origClick.apply(this, arguments);
+  };
+
+  // Also catch direct user clicks on file inputs
+  document.addEventListener('click', function(e){
+    var el = e.target;
+    if(el && el.tagName === 'INPUT' && el.type === 'file'){
+      e.preventDefault();
+      e.stopPropagation();
+      var accept = (el.accept || '*/*').toLowerCase();
+      FlutterBridge.postMessage(JSON.stringify({action:'pickFile', accept:accept}));
+      return false;
+    }
+  }, true);
+
+  // ─── 2. Override audio recording ───
+  window.toggleRecord = function(){
+    FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
+  };
+  window.toggleReminderVoice = function(){
+    FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
+  };
+  window.toggleRpVoice = function(){
+    FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
+  };
+
+  // Override getUserMedia
+  if(!navigator.mediaDevices) navigator.mediaDevices = {};
+  navigator.mediaDevices.getUserMedia = function(c){
+    if(c && c.audio && !c.video){
+      FlutterBridge.postMessage(JSON.stringify({action:'recordAudio'}));
+      return Promise.reject(new DOMException('Native','NotAllowedError'));
+    }
     return Promise.reject(new DOMException('Not supported','NotSupportedError'));
   };
 
-  // Listen for new chat messages via WebSocket and notify Flutter
-  var _origWsMsg=null;
-  function hookWebSocket(){
-    var _origWS=window.WebSocket;
-    window.WebSocket=function(url,protocols){
-      var ws=protocols?new _origWS(url,protocols):new _origWS(url);
-      ws.addEventListener('message',function(evt){
-        try{
-          var d=JSON.parse(evt.data);
-          if(d.event==='message'&&d.sender_name){
-            FlutterBridge.postMessage(JSON.stringify({
-              action:'chatNotif',
-              sender:d.sender_name||'',
-              text:d.content||'',
-              type:d.msg_type||'text'
-            }));
-          }
-        }catch(e){}
-      });
-      return ws;
-    };
-    window.WebSocket.prototype=_origWS.prototype;
-    window.WebSocket.CONNECTING=_origWS.CONNECTING;
-    window.WebSocket.OPEN=_origWS.OPEN;
-    window.WebSocket.CLOSING=_origWS.CLOSING;
-    window.WebSocket.CLOSED=_origWS.CLOSED;
-  }
-  hookWebSocket();
+  // ─── 3. Hook WebSocket for chat notifications ───
+  var _WS = window.WebSocket;
+  window.WebSocket = function(url, protocols){
+    var ws = protocols ? new _WS(url, protocols) : new _WS(url);
+    ws.addEventListener('message', function(evt){
+      try {
+        var d = JSON.parse(evt.data);
+        if(d.event === 'message' && d.sender_name){
+          FlutterBridge.postMessage(JSON.stringify({
+            action:'chatNotif',
+            sender: d.sender_name || '',
+            text: d.content || '',
+            type: d.msg_type || 'text'
+          }));
+        }
+      } catch(e){}
+    });
+    return ws;
+  };
+  window.WebSocket.prototype = _WS.prototype;
+  window.WebSocket.CONNECTING = _WS.CONNECTING;
+  window.WebSocket.OPEN = _WS.OPEN;
+  window.WebSocket.CLOSING = _WS.CLOSING;
+  window.WebSocket.CLOSED = _WS.CLOSED;
 })();
     ''');
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // BRIDGE MESSAGE HANDLER
+  // ═══════════════════════════════════════════════════════════════
   void _onBridgeMessage(JavaScriptMessage msg) async {
     try {
       final d = jsonDecode(msg.message);
       final action = d['action'] ?? '';
-
       switch (action) {
+        case 'pickFile':
+          await _handleFilePick(d['accept'] ?? '*/*');
+          break;
         case 'recordAudio':
           await _showRecordingUI();
           break;
         case 'chatNotif':
-          _showChatNotification(
-            d['sender'] ?? '',
-            d['text'] ?? '',
-            d['type'] ?? 'text',
-          );
+          _showChatNotification(d['sender'] ?? '', d['text'] ?? '', d['type'] ?? 'text');
           break;
       }
     } catch (e) {
@@ -280,122 +226,64 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // CHAT NOTIFICATION — WhatsApp-style banner on top
+  // FILE PICKING — Pick natively, upload from Flutter, inject URL
   // ═══════════════════════════════════════════════════════════════
-  void _showChatNotification(String sender, String text, String type) {
-    if (!mounted) return;
-    // Don't show if sender is empty (own messages)
-    if (sender.isEmpty) return;
-
-    String body;
-    switch (type) {
-      case 'image':
-        body = '📷 Photo';
-        break;
-      case 'video':
-        body = '🎬 Video';
-        break;
-      case 'voice':
-        body = '🎤 Voice note';
-        break;
-      default:
-        body = text.length > 60 ? '${text.substring(0, 60)}...' : text;
-    }
-
-    setState(() => _notifMessage = '$sender: $body');
-    _notifTimer?.cancel();
-    _notifTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _notifMessage = null);
-    });
-
-    // Vibrate briefly
-    HapticFeedback.mediumImpact();
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // VOICE RECORDING
-  // ═══════════════════════════════════════════════════════════════
-  Future<void> _showRecordingUI() async {
-    var micStatus = await Permission.microphone.status;
-    if (!micStatus.isGranted) {
-      micStatus = await Permission.microphone.request();
-    }
-
-    if (micStatus.isPermanentlyDenied) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Microphone permission denied. Enable in Settings.'),
-          action: SnackBarAction(label: 'Settings', onPressed: () => openAppSettings()),
-        ));
-      }
-      return;
-    }
-
-    if (!micStatus.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone permission required')),
-        );
-      }
-      return;
-    }
-
-    await _startRecording();
-  }
-
-  Future<void> _startRecording() async {
-    try {
-      final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-      await _recorderChannel.invokeMethod('startRecording', {'path': path});
-
-      _recordingSeconds = 0;
-      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _recordingSeconds++);
-      });
-      if (mounted) setState(() => _isRecording = true);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Recording failed: ${e.toString().split('(').first}')),
-        );
-      }
-    }
-  }
-
-  Future<void> _stopAndSendRecording() async {
-    _recordingTimer?.cancel();
-    _recordingTimer = null;
+  Future<void> _handleFilePick(String accept) async {
+    File? file;
+    String? fileName;
 
     try {
-      final String? path = await _recorderChannel.invokeMethod('stopRecording');
-      if (mounted) setState(() => _isRecording = false);
-
-      if (path != null && path.isNotEmpty) {
-        final file = File(path);
-        if (await file.exists() && await file.length() > 0) {
-          await _uploadAndSend(file, 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a');
+      if (accept.contains('image')) {
+        final src = await _srcDialog();
+        if (src == null) return;
+        final picker = ImagePicker();
+        if (src == ImageSource.camera) {
+          final xf = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+          if (xf != null) { file = File(xf.path); fileName = xf.name; }
+        } else {
+          final xf = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+          if (xf != null) { file = File(xf.path); fileName = xf.name; }
+        }
+      } else if (accept.contains('video')) {
+        final src = await _videoSrcDialog();
+        if (src == null) return;
+        final picker = ImagePicker();
+        final xf = await picker.pickVideo(source: src, maxDuration: const Duration(minutes: 5));
+        if (xf != null) { file = File(xf.path); fileName = xf.name; }
+      } else {
+        final r = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false);
+        if (r != null && r.files.isNotEmpty && r.files.single.path != null) {
+          file = File(r.files.single.path!);
+          fileName = r.files.single.name;
         }
       }
     } catch (e) {
-      if (mounted) setState(() => _isRecording = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Pick failed: ${e.toString().split('\n').first}')),
+        );
+      }
+      return;
     }
-  }
 
-  Future<void> _cancelRecording() async {
-    _recordingTimer?.cancel();
-    _recordingTimer = null;
-    try { await _recorderChannel.invokeMethod('cancelRecording'); } catch (_) {}
-    if (mounted) setState(() => _isRecording = false);
+    if (file == null || fileName == null) return;
+
+    // Ensure filename has extension
+    if (!fileName.contains('.')) {
+      final ext = file.path.split('.').last;
+      if (ext.isNotEmpty) fileName = '$fileName.$ext';
+    }
+
+    await _uploadAndSend(file, fileName);
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // UPLOAD + SEND — uploads file and injects result into the page
+  // UPLOAD + INJECT — Upload file to server, inject URL into page
   // ═══════════════════════════════════════════════════════════════
   Future<void> _uploadAndSend(File file, String name) async {
     if (!await file.exists() || await file.length() == 0) return;
 
+    // Get auth token from WebView
     final tr = await _controller.runJavaScriptReturningResult(
         'localStorage.getItem("sahjanand_token")');
     final token = tr.toString().replaceAll('"', '');
@@ -415,7 +303,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
         final body = jsonDecode(await res.stream.bytesToString());
         final url = body['media_url'] ?? body['url'] ?? '';
         if (url.toString().isNotEmpty) {
-          _injectUploadedMedia(url.toString(), name);
+          _injectMedia(url.toString(), name);
         }
       } else {
         if (mounted) {
@@ -434,61 +322,165 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     }
   }
 
-  void _injectUploadedMedia(String url, String name) {
-    final nameLower = name.toLowerCase();
-    final isAudio = nameLower.endsWith('.m4a') || nameLower.endsWith('.mp3') ||
-        nameLower.endsWith('.ogg') || nameLower.endsWith('.wav') ||
-        nameLower.endsWith('.webm') || nameLower.endsWith('.aac');
+  // ═══════════════════════════════════════════════════════════════
+  // INJECT MEDIA — Put uploaded URL into the correct place on the page
+  // ═══════════════════════════════════════════════════════════════
+  void _injectMedia(String url, String name) {
+    final ext = name.split('.').last.toLowerCase();
+    final isAudio = ['m4a', 'mp3', 'ogg', 'wav', 'webm', 'aac'].contains(ext);
+    final isVideo = ['mp4', 'mov', 'avi', '3gp'].contains(ext);
+
+    String msgType = 'image';
+    if (isAudio) msgType = 'voice';
+    if (isVideo) msgType = 'video';
 
     _controller.runJavaScript('''
 (function(){
-  var token=localStorage.getItem('sahjanand_token'),api=window.API||'';
-  var fullUrl='$url';
-  var fileName='$name';
-  var isAudio=${isAudio ? 'true' : 'false'};
+  var token = localStorage.getItem('sahjanand_token');
+  var api = window.API || '';
+  var url = '$url';
+  var name = '$name';
+  var msgType = '$msgType';
 
-  // Job Card form
-  var jcPanel=document.getElementById('jcFormPanel');
-  if(jcPanel&&jcPanel.style.display!=='none'&&jcPanel.offsetParent!==null&&!isAudio){
-    var u=document.getElementById('jcImageUrl');if(u)u.value=fullUrl;
-    var p=document.getElementById('jcImagePreview');
-    if(p)p.innerHTML='<img src="'+fullUrl+'" style="max-height:80px;border-radius:8px;"/> <span style="color:green;font-size:.75rem;">Uploaded</span>';
+  // 1. Check Job Card form
+  var jcPanel = document.getElementById('jcFormPanel');
+  if(jcPanel && jcPanel.style.display !== 'none' && jcPanel.offsetParent !== null && msgType === 'image'){
+    var u = document.getElementById('jcImageUrl'); if(u) u.value = url;
+    var p = document.getElementById('jcImagePreview');
+    if(p) p.innerHTML = '<img src="'+url+'" style="max-height:80px;border-radius:8px;"/> <span style="color:green;font-size:.75rem;">Uploaded</span>';
     return;
   }
 
-  // Reminder forms
-  var rf=document.getElementById('reminderForm');
-  if(rf&&rf.style.display!=='none'){
-    var x=document.getElementById('reminderMediaUrl');if(x)x.value=fullUrl;
-    x=document.getElementById('reminderMediaName');if(x)x.value=fileName;
-    x=document.getElementById('reminderMediaInfo');if(x)x.textContent=fileName;
+  // 2. Check Reminder form
+  var rf = document.getElementById('reminderForm');
+  if(rf && rf.style.display !== 'none'){
+    var x = document.getElementById('reminderMediaUrl'); if(x) x.value = url;
+    x = document.getElementById('reminderMediaName'); if(x) x.value = name;
+    x = document.getElementById('reminderMediaInfo'); if(x) x.textContent = name;
     return;
   }
-  var rpf=document.getElementById('rpFormPanel');
-  if(rpf&&rpf.style.display!=='none'){
-    var x=document.getElementById('rpMediaUrl');if(x)x.value=fullUrl;
-    x=document.getElementById('rpMediaName');if(x)x.value=fileName;
-    x=document.getElementById('rpMediaInfo');if(x)x.textContent=fileName;
+  var rpf = document.getElementById('rpFormPanel');
+  if(rpf && rpf.style.display !== 'none'){
+    var x = document.getElementById('rpMediaUrl'); if(x) x.value = url;
+    x = document.getElementById('rpMediaName'); if(x) x.value = name;
+    x = document.getElementById('rpMediaInfo'); if(x) x.textContent = name;
     return;
   }
 
-  // Chat message
-  var gid=window.currentGroupId;
-  if(!gid||!token)return;
-  var ext=fileName.split('.').pop().toLowerCase();
-  var t='image';
-  if(['mp4','mov','webm','avi','3gp'].indexOf(ext)>=0)t='video';
-  if(isAudio||['mp3','ogg','wav','m4a','aac','amr'].indexOf(ext)>=0)t='voice';
-  fetch(api+'/api/chat/groups/'+gid+'/messages',{method:'POST',
-    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-    body:JSON.stringify({msg_type:t,media_url:fullUrl,media_name:fileName,content:''})
-  }).then(function(){if(typeof refreshChatMessages==='function')refreshChatMessages();});
+  // 3. Send as chat message
+  var gid = window.currentGroupId;
+  if(!gid || !token) return;
+
+  // Use WebSocket if connected (instant delivery)
+  if(window.chatWs && window.chatWs.readyState === 1){
+    window.chatWs.send(JSON.stringify({
+      event: 'message',
+      msg_type: msgType,
+      media_url: url,
+      media_name: name,
+      content: ''
+    }));
+  } else {
+    // Fallback: REST API
+    fetch(api + '/api/chat/groups/' + gid + '/messages', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+      body: JSON.stringify({msg_type: msgType, media_url: url, media_name: name, content: ''})
+    }).then(function(){ if(typeof refreshChatMessages === 'function') refreshChatMessages(); });
+  }
 })();
     ''');
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // UI
+  // VOICE RECORDING
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _showRecordingUI() async {
+    var micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted) micStatus = await Permission.microphone.request();
+
+    if (micStatus.isPermanentlyDenied) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Microphone denied. Enable in Settings.'),
+          action: SnackBarAction(label: 'Settings', onPressed: () => openAppSettings()),
+        ));
+      }
+      return;
+    }
+    if (!micStatus.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission required')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorderChannel.invokeMethod('startRecording', {'path': path});
+      _recordingSeconds = 0;
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _recordingSeconds++);
+      });
+      if (mounted) setState(() => _isRecording = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Recording failed: ${e.toString().split('(').first}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    try {
+      final String? path = await _recorderChannel.invokeMethod('stopRecording');
+      if (mounted) setState(() => _isRecording = false);
+      if (path != null && path.isNotEmpty) {
+        final file = File(path);
+        if (await file.exists() && await file.length() > 0) {
+          await _uploadAndSend(file, 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a');
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isRecording = false);
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    try { await _recorderChannel.invokeMethod('cancelRecording'); } catch (_) {}
+    if (mounted) setState(() => _isRecording = false);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // CHAT NOTIFICATION BANNER
+  // ═══════════════════════════════════════════════════════════════
+  void _showChatNotification(String sender, String text, String type) {
+    if (!mounted || sender.isEmpty) return;
+    String body;
+    switch (type) {
+      case 'image': body = '📷 Photo'; break;
+      case 'video': body = '🎬 Video'; break;
+      case 'voice': body = '🎤 Voice note'; break;
+      default: body = text.length > 50 ? '${text.substring(0, 50)}...' : text;
+    }
+    setState(() => _notifMessage = '$sender: $body');
+    _notifTimer?.cancel();
+    _notifTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _notifMessage = null);
+    });
+    HapticFeedback.mediumImpact();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // DIALOGS
   // ═══════════════════════════════════════════════════════════════
   String _formatDuration(int s) =>
       '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
@@ -519,6 +511,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     ),
   );
 
+  // ═══════════════════════════════════════════════════════════════
+  // LIFECYCLE
+  // ═══════════════════════════════════════════════════════════════
   @override
   void dispose() {
     _recordingTimer?.cancel();
@@ -531,7 +526,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _controller.runJavaScript(
-        'if(typeof refreshChatMessages==="function")refreshChatMessages();');
+          'if(typeof refreshChatMessages==="function")refreshChatMessages();');
     }
   }
 
@@ -540,6 +535,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     _controller.loadRequest(Uri.parse(kProductionUrl));
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // BUILD
+  // ═══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
@@ -561,43 +559,32 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
         backgroundColor: const Color(0xFFFFF9F5),
         body: SafeArea(
           child: Stack(children: [
-            // WebView
             if (_hasError)
               Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Icon(Icons.cloud_off_rounded, size: 64, color: Color(0xFFC8290C)),
                 const SizedBox(height: 16),
                 const Text('Could not connect', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _retry,
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC8290C), foregroundColor: Colors.white),
-                  child: const Text('Retry'),
-                ),
+                ElevatedButton(onPressed: _retry,
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC8290C), foregroundColor: Colors.white),
+                    child: const Text('Retry')),
               ]))
             else
               WebViewWidget(controller: _controller),
 
-            // Loading splash
             if (_isLoading)
-              Container(
-                color: const Color(0xFFFFF9F5),
-                child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Container(color: const Color(0xFFFFF9F5), child: Center(child: Column(
+                mainAxisAlignment: MainAxisAlignment.center, children: [
                   Image.asset('assets/icon.png', width: 100, height: 100,
                       errorBuilder: (_, __, ___) => const Icon(Icons.business, size: 64, color: Color(0xFFC8290C))),
                   const SizedBox(height: 24),
                   const Text('Sahjanand', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC8290C))),
                   const SizedBox(height: 16),
                   const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(color: Color(0xFFC8290C), strokeWidth: 3)),
-                ])),
-              ),
+                ]))),
 
-            // Chat notification banner (WhatsApp-style)
             if (_notifMessage != null) _buildNotifBanner(),
-
-            // Recording overlay
             if (_isRecording) _buildRecordingOverlay(),
-
-            // Upload indicator
             if (_isUploading) _buildUploadIndicator(),
           ]),
         ),
@@ -605,98 +592,49 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     );
   }
 
-  Widget _buildNotifBanner() {
-    return Positioned(
-      top: 0, left: 0, right: 0,
-      child: Material(
-        elevation: 4,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
-            color: Color(0xFF2D1B0E),
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(12),
-              bottomRight: Radius.circular(12),
-            ),
-          ),
-          child: Row(children: [
-            const CircleAvatar(
-              radius: 18,
-              backgroundColor: Color(0xFFC8290C),
-              child: Icon(Icons.chat, color: Colors.white, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                _notifMessage ?? '',
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            GestureDetector(
-              onTap: () => setState(() => _notifMessage = null),
-              child: const Icon(Icons.close, color: Colors.white54, size: 20),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
+  Widget _buildNotifBanner() => Positioned(top: 0, left: 0, right: 0,
+    child: Material(elevation: 4, child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(color: Color(0xFF2D1B0E),
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12))),
+      child: Row(children: [
+        const CircleAvatar(radius: 18, backgroundColor: Color(0xFFC8290C),
+            child: Icon(Icons.chat, color: Colors.white, size: 18)),
+        const SizedBox(width: 12),
+        Expanded(child: Text(_notifMessage ?? '',
+            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+            maxLines: 2, overflow: TextOverflow.ellipsis)),
+        GestureDetector(onTap: () => setState(() => _notifMessage = null),
+            child: const Icon(Icons.close, color: Colors.white54, size: 20)),
+      ]),
+    )));
 
-  Widget _buildRecordingOverlay() {
-    return Positioned(
-      left: 0, right: 0, bottom: 0,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, -2))],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Row(children: [
-            GestureDetector(
-              onTap: _cancelRecording,
-              child: Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
-                child: const Icon(Icons.delete_outline, color: Colors.red, size: 24),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Row(children: [
-              Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Text('Recording ${_formatDuration(_recordingSeconds)}',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-            ])),
-            GestureDetector(
-              onTap: _stopAndSendRecording,
-              child: Container(
-                width: 48, height: 48,
-                decoration: const BoxDecoration(color: Color(0xFFC8290C), shape: BoxShape.circle),
-                child: const Icon(Icons.send, color: Colors.white, size: 22),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
+  Widget _buildRecordingOverlay() => Positioned(left: 0, right: 0, bottom: 0,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(color: Colors.white,
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, -2))]),
+      child: SafeArea(top: false, child: Row(children: [
+        GestureDetector(onTap: _cancelRecording, child: Container(width: 44, height: 44,
+            decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
+            child: const Icon(Icons.delete_outline, color: Colors.red, size: 24))),
+        const SizedBox(width: 12),
+        Expanded(child: Row(children: [
+          Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
+          const SizedBox(width: 8),
+          Text('Recording ${_formatDuration(_recordingSeconds)}',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+        ])),
+        GestureDetector(onTap: _stopAndSendRecording, child: Container(width: 48, height: 48,
+            decoration: const BoxDecoration(color: Color(0xFFC8290C), shape: BoxShape.circle),
+            child: const Icon(Icons.send, color: Colors.white, size: 22))),
+      ]))));
 
-  Widget _buildUploadIndicator() {
-    return Positioned(
-      left: 0, right: 0, bottom: 0,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        color: Colors.white,
-        child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC8290C))),
-          SizedBox(width: 12),
-          Text('Uploading...', style: TextStyle(fontSize: 14, color: Colors.black54)),
-        ]),
-      ),
-    );
-  }
+  Widget _buildUploadIndicator() => Positioned(left: 0, right: 0, bottom: 0,
+    child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), color: Colors.white,
+      child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC8290C))),
+        SizedBox(width: 12),
+        Text('Uploading...', style: TextStyle(fontSize: 14, color: Colors.black54)),
+      ])));
 }
