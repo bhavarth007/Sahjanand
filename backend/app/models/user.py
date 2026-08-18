@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     designation: Optional[str] = None
+    mobile_no: Optional[str] = None
     is_admin: bool = False
     chat_can_send: bool = True
     can_view_sales: bool = True

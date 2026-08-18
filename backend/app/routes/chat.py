@@ -123,6 +123,7 @@ class MemberOut(BaseModel):
     is_admin: bool
     chat_can_send: bool
     designation: Optional[str] = None
+    mobile_no: Optional[str] = None
     model_config = {"from_attributes": True}
 
 class AddMemberReq(BaseModel):

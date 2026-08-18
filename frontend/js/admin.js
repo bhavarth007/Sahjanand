@@ -263,6 +263,7 @@ function openAddUserModal() {
   document.getElementById('userModalId').value = '';
   document.getElementById('userModalName').value = '';
   document.getElementById('userModalDesignation').value = '';
+  document.getElementById('userModalMobile').value = '';
   document.getElementById('userModalEmail').value = '';
   document.getElementById('userModalPassword').value = '';
   document.getElementById('userModalPassword').required = true;
@@ -279,6 +280,7 @@ function openEditUserModal(uid) {
   document.getElementById('userModalId').value = uid;
   document.getElementById('userModalName').value = user.full_name || '';
   document.getElementById('userModalDesignation').value = user.designation || '';
+  document.getElementById('userModalMobile').value = user.mobile_no || '';
   document.getElementById('userModalEmail').value = user.email || '';
   document.getElementById('userModalPassword').value = '';
   document.getElementById('userModalPassword').required = false;
@@ -298,14 +300,21 @@ async function submitUserForm(e) {
   const uid   = document.getElementById('userModalId').value;
   const name  = document.getElementById('userModalName').value.trim();
   const designation = document.getElementById('userModalDesignation').value.trim();
+  const mobile = document.getElementById('userModalMobile').value.trim();
   const email = document.getElementById('userModalEmail').value.trim();
   const pwd   = document.getElementById('userModalPassword').value;
+
+  // Validate mobile: must be exactly 10 digits if provided
+  if (mobile && (!/^\d{10}$/.test(mobile))) {
+    showAdminToast('Mobile number must be exactly 10 digits', 'error');
+    return;
+  }
 
   const isEdit = !!uid;
   const url    = isEdit ? `${ADMIN_API}/api/admin/users/${uid}` : `${ADMIN_API}/api/admin/users`;
   const method = isEdit ? 'PATCH' : 'POST';
 
-  const body = { full_name: name, email: email, designation: designation || null };
+  const body = { full_name: name, email: email, designation: designation || null, mobile_no: mobile || null };
   if (pwd) body.password = pwd;
 
   try {

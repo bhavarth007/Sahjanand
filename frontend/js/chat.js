@@ -81,15 +81,17 @@ function renderUserList(filter) {
     const name = u.full_name || u.email;
     const online = chatOnline.has(u.id) ? 'online' : '';
     const role = u.designation || (u.is_admin ? 'Admin' : 'Member');
-    return `<div class="chat-member-item" onclick="toggleUserInfo(this)">
+    const mobile = u.mobile_no ? `<div style="font-size:.73rem;color:var(--text-secondary);margin-top:2px;"><i class="fa-solid fa-phone" style="width:14px;font-size:.65rem;color:var(--primary);"></i> ${esc(u.mobile_no)}</div>` : '';
+    const emailRow = `<div style="font-size:.73rem;color:var(--text-secondary);margin-top:2px;"><i class="fa-solid fa-envelope" style="width:14px;font-size:.65rem;color:var(--primary);"></i> ${esc(u.email)}</div>`;
+    const desigRow = u.designation ? `<div style="font-size:.73rem;color:var(--text-secondary);margin-top:2px;"><i class="fa-solid fa-briefcase" style="width:14px;font-size:.65rem;color:var(--primary);"></i> ${esc(u.designation)}</div>` : '';
+    return `<div class="chat-member-item" onclick="toggleUserInfo(this)" style="flex-wrap:wrap;cursor:pointer;">
       <div class="chat-member-avatar ${online}">${chatInit(name)}</div>
       <div class="chat-member-info">
         <div class="chat-member-name">${esc(name)}</div>
         <div class="chat-member-role">${esc(role)}</div>
       </div>
-      <div class="chat-user-detail" style="display:none;width:100%;padding:8px 0 4px 48px;">
-        <div style="font-size:.75rem;color:var(--text-muted);"><i class="fa-solid fa-briefcase" style="width:14px;"></i> ${esc(u.designation || 'No designation')}</div>
-        <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px;"><i class="fa-solid fa-envelope" style="width:14px;"></i> ${esc(u.email)}</div>
+      <div class="chat-user-detail" style="display:none;width:100%;padding:8px 12px 6px;margin-top:6px;background:#f9f5f3;border-radius:8px;border:1px solid var(--border);">
+        ${desigRow}${mobile}${emailRow}
       </div>
     </div>`;
   }).join('');

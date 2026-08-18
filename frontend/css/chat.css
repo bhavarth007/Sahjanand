@@ -677,6 +677,9 @@
   .chat-header-subtitle { font-size: .7rem; }
   .chat-msg-row { max-width: 88%; }
   .chat-bubble-image img { max-width: 180px; }
+  #tuneSelector select { font-size: .68rem; padding: 4px 6px; max-width: 120px; }
+  .chat-reminders-header { padding: 10px 12px; }
+  .reminder-tab { padding: 5px 10px; font-size: .72rem; }
 }
 
 

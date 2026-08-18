@@ -1220,11 +1220,13 @@ tbody tr:hover td { background: var(--bg-light); }
   .topbar-left { gap: 8px; }
   .page-title { font-size: 0.95rem; }
 
-  .topbar-right { gap: 8px; }
+  .topbar-right { gap: 8px; overflow: visible; }
 
   .topbar-icon-btn {
     width: 32px; height: 32px;
     font-size: 0.85rem;
+    overflow: visible;
+    flex-shrink: 0;
   }
 
   .profile-btn {

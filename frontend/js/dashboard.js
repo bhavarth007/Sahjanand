@@ -83,8 +83,10 @@ function setUserInfo() {
 
   const nameInput  = document.getElementById('editName');
   const emailInput = document.getElementById('editEmail');
+  const mobileInput = document.getElementById('editMobile');
   if (nameInput)  nameInput.value  = userData.full_name || '';
   if (emailInput) emailInput.value = email;
+  if (mobileInput) mobileInput.value = userData.mobile_no || '';
 }
 
 function setGreeting() {

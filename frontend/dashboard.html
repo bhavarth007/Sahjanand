@@ -577,6 +577,10 @@
           <label style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Full Name</label>
           <input type="text" id="editName" style="width:100%;margin-top:6px;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:0.95rem;font-family:inherit;outline:none;" />
         </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Mobile No.</label>
+          <input type="tel" id="editMobile" maxlength="10" pattern="[0-9]{10}" placeholder="10 digit mobile number" style="width:100%;margin-top:6px;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:0.95rem;font-family:inherit;outline:none;" />
+        </div>
         <div style="margin-bottom:24px;">
           <label style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Email</label>
           <input type="email" id="editEmail" style="width:100%;margin-top:6px;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:0.95rem;font-family:inherit;background:#f9f5f3;outline:none;" readonly />
@@ -636,6 +640,10 @@
               <div class="admin-form-group">
                 <label>Designation</label>
                 <input type="text" id="userModalDesignation" placeholder="e.g. Sales Manager" />
+              </div>
+              <div class="admin-form-group">
+                <label>Mobile No.</label>
+                <input type="tel" id="userModalMobile" placeholder="10 digit mobile number" maxlength="10" pattern="[0-9]{10}" />
               </div>
               <div class="admin-form-group">
                 <label>Email</label>

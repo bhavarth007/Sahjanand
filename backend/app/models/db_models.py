@@ -19,6 +19,7 @@ class User(Base):
     is_admin       = Column(Boolean, default=False)   # can manage chat permissions
     chat_can_send  = Column(Boolean, default=True)    # allowed to send messages in group chat
     designation    = Column(String(255), nullable=True)  # e.g. "Sales Manager"
+    mobile_no      = Column(String(10), nullable=True, unique=True)  # exactly 10 digits, unique
 
     # Section access rights (admin-controlled per user)
     can_view_sales     = Column(Boolean, default=True)

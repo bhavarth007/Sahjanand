@@ -26,6 +26,7 @@ class UserAccessOut(BaseModel):
     is_active:          bool
     chat_can_send:      bool
     designation:        Optional[str] = None
+    mobile_no:          Optional[str] = None
     can_view_sales:     bool
     can_view_reminders: bool
     can_view_samples:   bool
@@ -101,6 +102,7 @@ class UserCreateByAdmin(BaseModel):
     password: str
     full_name: Optional[str] = None
     designation: Optional[str] = None
+    mobile_no: Optional[str] = None
 
 
 class UserEditByAdmin(BaseModel):
@@ -108,6 +110,7 @@ class UserEditByAdmin(BaseModel):
     password:    Optional[str] = None
     full_name:   Optional[str] = None
     designation: Optional[str] = None
+    mobile_no:   Optional[str] = None
 
 
 # ── POST /api/admin/users — create a new user ──────────────────
@@ -124,11 +127,23 @@ async def create_user(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered.")
 
+    # Validate mobile_no: exactly 10 digits, unique
+    mobile = None
+    if body.mobile_no:
+        cleaned = body.mobile_no.strip().replace(" ", "")
+        if not cleaned.isdigit() or len(cleaned) != 10:
+            raise HTTPException(status_code=400, detail="Mobile number must be exactly 10 digits.")
+        dup = await db.execute(select(User).where(User.mobile_no == cleaned))
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Mobile number already registered.")
+        mobile = cleaned
+
     new_user = User(
         email=body.email,
         password=hash_password(body.password),
         full_name=body.full_name or "",
         designation=body.designation,
+        mobile_no=mobile,
         is_active=True,
     )
     db.add(new_user)
@@ -164,6 +179,18 @@ async def edit_user(
 
     if body.designation is not None:
         target.designation = body.designation
+
+    if body.mobile_no is not None:
+        cleaned = body.mobile_no.strip().replace(" ", "")
+        if cleaned == "":
+            target.mobile_no = None
+        else:
+            if not cleaned.isdigit() or len(cleaned) != 10:
+                raise HTTPException(status_code=400, detail="Mobile number must be exactly 10 digits.")
+            dup = await db.execute(select(User).where(User.mobile_no == cleaned, User.id != uid))
+            if dup.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Mobile number already in use.")
+            target.mobile_no = cleaned
 
     if body.password is not None and body.password.strip():
         target.password = hash_password(body.password)
