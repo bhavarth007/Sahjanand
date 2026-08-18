@@ -10,12 +10,81 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 const String kProductionUrl = 'https://sahjanand-api.onrender.com';
 const MethodChannel _recorderChannel = MethodChannel('com.sahjanand.recorder');
 
-void main() {
+// ═══════════════════════════════════════════════════════════════
+// FCM Background message handler (must be top-level)
+// ═══════════════════════════════════════════════════════════════
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  // Show local notification for background messages
+  await _showLocalNotification(message);
+}
+
+// Local notifications plugin (global for background access)
+final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+
+Future<void> _showLocalNotification(RemoteMessage message) async {
+  final notification = message.notification;
+  final data = message.data;
+
+  final title = notification?.title ?? data['title'] ?? 'Sahjanand';
+  final body = notification?.body ?? data['body'] ?? 'New notification';
+
+  const androidDetails = AndroidNotificationDetails(
+    'sahjanand_reminders',
+    'Reminders & Messages',
+    channelDescription: 'Reminder alerts and chat messages',
+    importance: Importance.max,
+    priority: Priority.high,
+    showWhen: true,
+    enableVibration: true,
+    playSound: true,
+    icon: '@mipmap/ic_launcher',
+  );
+
+  await _localNotifications.show(
+    DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    title,
+    body,
+    const NotificationDetails(android: androidDetails),
+  );
+}
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp();
+
+  // Set up background message handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Initialize local notifications
+  const initSettings = InitializationSettings(
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+  );
+  await _localNotifications.initialize(initSettings);
+
+  // Create notification channel (Android 8+)
+  const channel = AndroidNotificationChannel(
+    'sahjanand_reminders',
+    'Reminders & Messages',
+    description: 'Reminder alerts and chat messages',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+  await _localNotifications
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -81,7 +150,88 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       await Permission.audio.request();
     }
     _initWebView();
+    _initFCM();
     setState(() => _ready = true);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FCM SETUP
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _initFCM() async {
+    final messaging = FirebaseMessaging.instance;
+
+    // Request permission (Android 13+)
+    await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+
+    // Get FCM token and register with backend
+    final fcmToken = await messaging.getToken();
+    if (fcmToken != null) {
+      _registerFcmToken(fcmToken);
+    }
+
+    // Listen for token refresh
+    messaging.onTokenRefresh.listen(_registerFcmToken);
+
+    // Handle foreground messages — show local notification
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      _showLocalNotification(message);
+      // Also show in-app banner
+      final notification = message.notification;
+      final data = message.data;
+      final title = notification?.title ?? data['title'] ?? '';
+      final body = notification?.body ?? data['body'] ?? '';
+      if (title.isNotEmpty || body.isNotEmpty) {
+        _showNotif(title, body, data['type'] ?? 'reminder');
+      }
+    });
+
+    // Handle notification tap when app was in background
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      // Navigate to the app — WebView will reload
+      _controller.runJavaScript('if(typeof refreshChatMessages==="function")refreshChatMessages();');
+    });
+  }
+
+  Future<void> _registerFcmToken(String fcmToken) async {
+    // Wait a bit for the webview to load and get the auth token
+    await Future.delayed(const Duration(seconds: 3));
+    try {
+      final tr = await _controller.runJavaScriptReturningResult(
+          'localStorage.getItem("sahjanand_token")');
+      final token = tr.toString().replaceAll('"', '');
+      if (token == 'null' || token.isEmpty) return;
+
+      await http.post(
+        Uri.parse('$kProductionUrl/api/auth/fcm-token'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'fcm_token': fcmToken}),
+      );
+    } catch (_) {
+      // Retry once after delay
+      await Future.delayed(const Duration(seconds: 10));
+      try {
+        final tr = await _controller.runJavaScriptReturningResult(
+            'localStorage.getItem("sahjanand_token")');
+        final token = tr.toString().replaceAll('"', '');
+        if (token == 'null' || token.isEmpty) return;
+        await http.post(
+          Uri.parse('$kProductionUrl/api/auth/fcm-token'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'fcm_token': fcmToken}),
+        );
+      } catch (_) {}
+    }
   }
 
   void _initWebView() {

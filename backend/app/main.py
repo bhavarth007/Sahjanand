@@ -33,7 +33,12 @@ async def lifespan(app: FastAPI):
         print("✅ Supabase Storage bucket ready.")
     except Exception as e:
         print(f"⚠️ Storage bucket setup: {e}")
+    # Start background reminder notification scheduler
+    from app.reminder_scheduler import start_scheduler, stop_scheduler
+    start_scheduler()
+    print("✅ Reminder notification scheduler started.")
     yield
+    stop_scheduler()
     await close_db()
 
 

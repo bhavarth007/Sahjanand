@@ -206,3 +206,20 @@ class JobCard(Base):
 
 # Add relationship to User model - done via backref
 User.job_cards = relationship("JobCard", back_populates="user", cascade="all, delete-orphan")
+
+
+class FcmToken(Base):
+    """
+    Stores FCM device tokens for push notifications.
+    One user can have multiple devices (tokens).
+    """
+    __tablename__ = "fcm_tokens"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token      = Column(String(500), nullable=False, unique=True, index=True)
+    device_info = Column(String(255), nullable=True)  # optional device identifier
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User")

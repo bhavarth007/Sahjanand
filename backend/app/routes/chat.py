@@ -36,6 +36,7 @@ from app.auth import get_current_user
 from app.database import get_db, AsyncSessionLocal
 from app.models.db_models import ChatMessage, User, GroupMember, ChatGroup
 from app.config import get_settings
+from app.notifications import notify_new_chat_message
 from jose import JWTError, jwt
 
 settings = get_settings()
@@ -448,6 +449,26 @@ async def post_message(
         "created_at": msg.created_at.isoformat(),
     })
 
+    # Send push notification to offline group members
+    try:
+        members_result = await db.execute(
+            select(GroupMember.user_id).where(GroupMember.group_id == gid)
+        )
+        member_ids = [row[0] for row in members_result.all()]
+        group = await db.get(ChatGroup, gid)
+        group_name = group.name if group else "Group Chat"
+        await notify_new_chat_message(
+            sender_name=current_user.full_name or current_user.email,
+            msg_type=body.msg_type,
+            content=content or "",
+            group_name=group_name,
+            recipient_user_ids=member_ids,
+            sender_id=current_user.id,
+            db=db,
+        )
+    except Exception:
+        pass  # Don't fail the message send if push fails
+
     return MessageOut(
         id=msg.id, group_id=gid, sender_id=current_user.id,
         sender_name=current_user.full_name or current_user.email,
@@ -571,6 +592,26 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                     await db.flush()
                     await db.refresh(msg)
                     await db.commit()
+
+                    # Send push notification to offline members
+                    try:
+                        members_result = await db.execute(
+                            select(GroupMember.user_id).where(GroupMember.group_id == group_id)
+                        )
+                        member_ids = [row[0] for row in members_result.all()]
+                        group = await db.get(ChatGroup, group_id)
+                        group_name = group.name if group else "Group Chat"
+                        await notify_new_chat_message(
+                            sender_name=user.full_name or user.email,
+                            msg_type=msg_type,
+                            content=content or "",
+                            group_name=group_name,
+                            recipient_user_ids=member_ids,
+                            sender_id=user.id,
+                            db=db,
+                        )
+                    except Exception:
+                        pass
 
                 await manager.broadcast(group_id, {
                     "event": "message", "id": msg.id, "group_id": group_id,

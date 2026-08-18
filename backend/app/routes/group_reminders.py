@@ -246,6 +246,20 @@ async def create_reminder(
     uq = await db.execute(select(User).where(User.id.in_(user_ids)))
     user_map = {u.id: u for u in uq.scalars().all()}
 
+    # Send push notification to targeted users
+    try:
+        from app.notifications import notify_reminder_created
+        await notify_reminder_created(
+            creator_name=current_user.full_name or current_user.email,
+            reminder_name=reminder.name,
+            remind_date=reminder.remind_date,
+            remind_time=reminder.remind_time,
+            target_user_ids=target_ids_list,
+            db=db,
+        )
+    except Exception:
+        pass  # Don't fail reminder creation if push fails
+
     return serialize_reminder(reminder, user_map)
 
 

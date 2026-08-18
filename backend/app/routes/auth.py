@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete as sa_delete
+from pydantic import BaseModel
+from typing import Optional
 from app.models.user import UserCreate, UserLogin, Token, UserOut, UserUpdate, ForgotPasswordRequest
-from app.models.db_models import User
+from app.models.db_models import User, FcmToken
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.database import get_db
 
@@ -85,3 +87,60 @@ async def update_profile(
     await db.flush()
     await db.refresh(current_user)
     return current_user
+
+
+# ═══════════════════════════════════════════════════════════════
+# FCM Token registration
+# ═══════════════════════════════════════════════════════════════
+class FcmTokenRequest(BaseModel):
+    fcm_token: str
+    device_info: Optional[str] = None
+
+
+@router.post("/fcm-token")
+async def register_fcm_token(
+    payload: FcmTokenRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    token_str = payload.fcm_token.strip()
+    if not token_str:
+        raise HTTPException(status_code=400, detail="FCM token is required")
+
+    # Check if token already exists
+    result = await db.execute(select(FcmToken).where(FcmToken.token == token_str))
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        # Update ownership if token moved to a different user (device re-login)
+        if existing.user_id != current_user.id:
+            existing.user_id = current_user.id
+            existing.device_info = payload.device_info
+            await db.flush()
+        return {"status": "updated"}
+
+    # Create new token entry
+    new_token = FcmToken(
+        user_id=current_user.id,
+        token=token_str,
+        device_info=payload.device_info,
+    )
+    db.add(new_token)
+    await db.flush()
+    return {"status": "registered"}
+
+
+@router.delete("/fcm-token")
+async def remove_fcm_token(
+    payload: FcmTokenRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove FCM token on logout."""
+    await db.execute(
+        sa_delete(FcmToken).where(
+            FcmToken.token == payload.fcm_token.strip(),
+            FcmToken.user_id == current_user.id,
+        )
+    )
+    return {"status": "removed"}

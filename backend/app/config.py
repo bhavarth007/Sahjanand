@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     LOGO_URL: str = "/assets/images/logo.png"
 
+    # Firebase Cloud Messaging (for push notifications)
+    FCM_SERVER_KEY: str = ""  # Firebase Console → Project Settings → Cloud Messaging → Server Key
+
     @property
     def async_database_url(self) -> str:
         """
