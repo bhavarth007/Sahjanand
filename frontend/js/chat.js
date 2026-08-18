@@ -201,18 +201,20 @@ function buildBubble(msg) {
   if (date !== _lastDate) { _lastDate = date; divider = `<div class="chat-date-divider"><span>${date}</span></div>`; }
 
   let body = '';
+  let mediaOnly = false;
   switch (msg.msg_type) {
-    case 'image': body = `<div class="chat-bubble-image"><img src="${esc(msg.media_url)}" onclick="openLightbox('${esc(msg.media_url)}')" loading="lazy"/></div>`; if(msg.content) body += `<div class="chat-bubble-text">${renderText(msg.content)}</div>`; break;
+    case 'image': body = `<div class="chat-bubble-image"><img src="${esc(msg.media_url)}" onclick="openLightbox('${esc(msg.media_url)}')" loading="lazy"/></div>`; if(msg.content) body += `<div class="chat-bubble-text">${renderText(msg.content)}</div>`; else mediaOnly = true; break;
     case 'voice': body = `<div class="chat-bubble-voice"><i class="fa-solid fa-microphone chat-voice-icon"></i><audio controls src="${esc(msg.media_url)}" preload="none"></audio></div>`; break;
-    case 'video': body = `<div class="chat-bubble-video"><video controls src="${esc(msg.media_url)}" preload="none"></video></div>`; break;
+    case 'video': body = `<div class="chat-bubble-video"><video controls src="${esc(msg.media_url)}" preload="none"></video></div>`; mediaOnly = true; break;
     default: body = `<div class="chat-bubble-text">${renderText(msg.content || '')}</div>`;
   }
 
   const deleteBtn = (mine || currentIsAdmin) ? `<button class="msg-delete-btn" onclick="deleteMessage(${msg.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
+  const bubbleClass = mediaOnly ? 'chat-bubble chat-bubble-media-only' : 'chat-bubble';
 
   return `${divider}<div class="chat-msg-row ${side}" data-msg-id="${msg.id}">
     <div class="chat-msg-sender-avatar">${chatInit(name)}</div>
-    <div class="chat-bubble">
+    <div class="${bubbleClass}">
       ${mine ? '' : `<div class="chat-bubble-sender">${esc(name)}</div>`}
       ${body}
       <div class="chat-bubble-footer"><span class="chat-bubble-time">${time}</span>${deleteBtn}</div>

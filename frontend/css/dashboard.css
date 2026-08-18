@@ -888,6 +888,30 @@ tbody tr:hover td { background: var(--bg-light); }
   color: var(--primary);
 }
 
+/* Edit button on pending cards */
+.rp-card-edit {
+  position: absolute;
+  bottom: 12px;
+  right: 40px;
+  border: none;
+  background: none;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.rp-card:hover .rp-card-edit {
+  opacity: 1;
+}
+
+.rp-card-edit:hover {
+  color: #e67e22;
+}
+
 /* Empty state animation */
 .rp-empty-animated {
   font-size: 1.1rem;
@@ -1038,6 +1062,70 @@ tbody tr:hover td { background: var(--bg-light); }
 @media (max-width: 600px) {
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .page-content { padding: 16px; }
+
+  /* Reminders page mobile */
+  .reminders-page-tabs {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .rp-tab {
+    padding: 8px 14px;
+    font-size: 0.8rem;
+  }
+
+  .rp-new-btn {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  #rpTuneSelector {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  .rp-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rp-filter-input {
+    width: 100% !important;
+  }
+
+  .reminder-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .rp-card {
+    padding: 14px;
+  }
+
+  .rp-card-edit,
+  .rp-card-delete {
+    opacity: 1;
+  }
+
+  .rp-form-panel {
+    padding: 14px;
+  }
+
+  .rp-form-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .rp-form-field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .rp-form-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
 }
 
 /* ══════════════════════════════

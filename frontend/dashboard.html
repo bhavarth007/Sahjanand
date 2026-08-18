@@ -323,7 +323,7 @@
         <p>Stay on top of your tasks and follow-ups.</p>
       </div>
 
-      <!-- Tabs: Pending / History + New Reminder button -->
+      <!-- Tabs: Pending / History + New Reminder button + Alert Tune -->
       <div class="reminders-page-tabs">
         <button class="rp-tab active" id="rpTabPending" onclick="switchRemindersPageTab('pending')">
           <i class="fa-solid fa-clock"></i> Pending
@@ -334,17 +334,37 @@
         <button class="btn-primary rp-new-btn" onclick="openRpNewReminder()">
           <i class="fa-solid fa-plus"></i> New Reminder
         </button>
+        <!-- Alert Tune Selector (Admin only) -->
+        <div id="rpTuneSelector" style="display:none;margin-left:8px;">
+          <select id="rpAlertTuneSelect" onchange="setAlertTune(this.value)" style="padding:5px 10px;font-size:.75rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;cursor:pointer;background:#fff;">
+            <option value="1">🔔 Classic Siren</option>
+            <option value="2">🎵 Rising Beeps</option>
+            <option value="3">🔊 Triple Pulse</option>
+            <option value="4">🛎 Bell Chime</option>
+            <option value="5">🚨 Urgent Alarm</option>
+          </select>
+          <button onclick="playGlobalAlertSound()" style="padding:4px 8px;font-size:.7rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:#f9f5f3;margin-left:4px;" title="Preview">▶</button>
+        </div>
       </div>
 
       <!-- Filters -->
       <div class="rp-filters">
         <input type="text" id="rpFilterTitle" class="rp-filter-input" placeholder="Filter by title..." oninput="applyRpFilters()" />
         <input type="text" id="rpFilterPerson" class="rp-filter-input" placeholder="@person name" oninput="applyRpFilters()" />
+        <button class="btn-secondary" onclick="setRpDefaultFilter()" style="padding:5px 10px;font-size:.72rem;" title="Save as default filter">
+          <i class="fa-solid fa-thumbtack"></i> Set Default
+        </button>
+        <span id="rpFilterDefaultBadge" class="filter-badge default" style="display:none" title="Default filter active">
+          Default <button onclick="removeRpDefaultFilter()" style="border:none;background:none;color:inherit;cursor:pointer;font-size:.7rem;margin-left:4px;">✕</button>
+        </span>
+        <span id="rpFilterActiveBadge" class="filter-badge" style="display:none">
+          Filtered <button onclick="clearRpFilter()" style="border:none;background:none;color:inherit;cursor:pointer;font-size:.7rem;margin-left:4px;">✕</button>
+        </span>
       </div>
 
-      <!-- New Reminder Form (hidden by default) -->
+      <!-- New/Edit Reminder Form (hidden by default) -->
       <div class="rp-form-panel" id="rpFormPanel" style="display:none;">
-        <h4 class="rp-form-title">New Reminder</h4>
+        <h4 class="rp-form-title" id="rpFormTitle">New Reminder</h4>
         <div class="rp-form-row">
           <div class="rp-form-field" style="flex:2;">
             <label>Title</label>
@@ -363,6 +383,13 @@
           <div class="rp-form-field">
             <label>Time</label>
             <input type="time" id="rpReminderTime" class="rp-filter-input" style="width:100%;" step="60" />
+          </div>
+          <div class="rp-form-field">
+            <label>Status</label>
+            <select id="rpReminderStatus" class="rp-filter-input" style="width:100%;">
+              <option value="set">Set</option>
+              <option value="not_set">Not Set</option>
+            </select>
           </div>
         </div>
         <div class="rp-form-row">

@@ -274,6 +274,27 @@
 .chat-msg-row.mine .chat-bubble-time { color: #6aaf5e; }
 
 /* ── Media messages ────────────────────────────────────────────── */
+
+/* Media-only bubbles: transparent background, no border — like WhatsApp */
+.chat-bubble.chat-bubble-media-only {
+  background: transparent !important;
+  box-shadow: none;
+  padding: 2px 0 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.chat-bubble.chat-bubble-media-only .chat-bubble-image img {
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
+.chat-bubble.chat-bubble-media-only .chat-bubble-video video {
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
+.chat-bubble.chat-bubble-media-only .chat-bubble-footer {
+  padding: 2px 4px 0;
+}
+
 .chat-bubble-image img {
   max-width: 260px;
   max-height: 200px;
@@ -612,10 +633,20 @@
 
 /* ── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .chat-shell {
+  /* Let section-sales scroll so both chat + reminders are visible */
+  #section-sales {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     height: calc(100vh - 56px);
+    padding-bottom: 16px;
+  }
+
+  .chat-shell {
+    height: 55vh;
+    min-height: 320px;
     border-radius: 0;
     position: relative;
+    flex-shrink: 0;
   }
 
   .chat-members {
@@ -671,8 +702,82 @@
     font-size: 16px;
     padding: 8px 12px;
   }
+
+  /* Reminders section mobile layout */
+  .group-reminders-section {
+    margin-top: 12px;
+    border-radius: 10px;
+  }
+
+  .chat-reminders-header {
+    padding: 12px 14px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .chat-reminders-header > div {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .reminder-filter-bar {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .reminder-filter-bar .reminder-input {
+    max-width: 100% !important;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .reminder-form {
+    padding: 12px 14px;
+  }
+
+  .reminder-form-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .reminder-field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .reminder-list {
+    padding: 8px 10px;
+    max-height: 250px;
+  }
+
+  .reminder-row {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .reminder-row-edit,
+  .reminder-row-delete {
+    opacity: 1;
+  }
+
+  #addReminderBtn {
+    padding: 5px 10px;
+    font-size: .75rem;
+  }
+
+  #tuneSelector {
+    width: 100%;
+  }
 }
+
 @media (max-width: 600px) {
+  .chat-shell {
+    height: 50vh;
+    min-height: 280px;
+  }
+
   .chat-header-title { font-size: .9rem; }
   .chat-header-subtitle { font-size: .7rem; }
   .chat-msg-row { max-width: 88%; }
@@ -680,6 +785,33 @@
   #tuneSelector select { font-size: .68rem; padding: 4px 6px; max-width: 120px; }
   .chat-reminders-header { padding: 10px 12px; }
   .reminder-tab { padding: 5px 10px; font-size: .72rem; }
+
+  .chat-reminders-header h3 {
+    font-size: .9rem;
+  }
+
+  .reminder-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reminder-filter-bar .reminder-input {
+    max-width: 100% !important;
+    width: 100%;
+  }
+
+  .reminder-filter-bar .btn-secondary {
+    align-self: flex-start;
+  }
+
+  .reminder-form-row:last-child {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reminder-form-row:last-child > div:last-child {
+    justify-content: flex-end;
+  }
 }
 
 
@@ -992,6 +1124,7 @@
 /* Sales section scrollable for chat + reminders */
 #section-sales { overflow-y: auto; }
 #section-sales .chat-shell { flex-shrink: 0; }
+#section-sales .group-reminders-section { flex-shrink: 0; }
 
 
 /* Filter bar */

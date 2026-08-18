@@ -420,6 +420,7 @@ function applyRpFilters() {
     } else {
       grid.innerHTML = '<div class="reminder-cards-empty">No history found.</div>';
     }
+    updateRpFilterBadge();
     return;
   }
 
@@ -427,6 +428,7 @@ function applyRpFilters() {
   if (rpEmptyMsgInterval) { clearInterval(rpEmptyMsgInterval); rpEmptyMsgInterval = null; }
 
   renderReminderCards(items, rpCurrentTab, grid);
+  updateRpFilterBadge();
 }
 
 function showRpEmptyState(grid) {
@@ -458,6 +460,7 @@ function renderReminderCards(items, tab, grid) {
     const desc = r.description || '';
     const cardClass = isHistory ? 'rp-card rp-card-history' : 'rp-card';
     const deleteBtn = isAdmin ? `<button class="rp-card-delete" onclick="deleteReminderCard(${r.id}, ${r.group_id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
+    const editBtn = (tab === 'pending' && isAdmin) ? `<button class="rp-card-edit" onclick="editRpReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
 
     // Media preview — compact icons
     let mediaHtml = '';
@@ -475,7 +478,7 @@ function renderReminderCards(items, tab, grid) {
     }
 
     return `
-      <div class="${cardClass}" data-rpid="${r.id}">
+      <div class="${cardClass}" data-rpid="${r.id}" data-rpjson='${JSON.stringify(r).replace(/'/g,"&#39;")}'>
         <div class="rp-card-icon${isHistory ? ' history' : ''}">
           <i class="fa-solid fa-bell"></i>
         </div>
@@ -487,6 +490,7 @@ function renderReminderCards(items, tab, grid) {
           ${mediaHtml}
         </div>
         ${isHistory ? '<div class="rp-card-badge">DONE</div>' : `<div class="rp-card-status">${r.status === 'set' ? 'SET' : 'NOT SET'}</div>`}
+        ${editBtn}
         ${deleteBtn}
       </div>
     `;
@@ -516,11 +520,8 @@ function switchRemindersPageTab(tab) {
   rpCurrentTab = tab;
   document.getElementById('rpTabPending')?.classList.toggle('active', tab === 'pending');
   document.getElementById('rpTabHistory')?.classList.toggle('active', tab === 'history');
-  // Clear filters on tab switch
-  const titleInput = document.getElementById('rpFilterTitle');
-  const personInput = document.getElementById('rpFilterPerson');
-  if (titleInput) titleInput.value = '';
-  if (personInput) personInput.value = '';
+  // Restore default filter on tab switch (instead of clearing)
+  initRpFilters();
   loadRemindersPage(tab);
 }
 
@@ -577,15 +578,24 @@ function escRp(s) {
 }
 
 // ── New Reminder form (Reminders page) ──
+let rpEditingReminderId = null;
+let rpEditingGroupId = null;
+
 async function openRpNewReminder() {
+  rpEditingReminderId = null;
+  rpEditingGroupId = null;
   const panel = document.getElementById('rpFormPanel');
   if (panel) panel.style.display = 'block';
+  const title = document.getElementById('rpFormTitle');
+  if (title) title.textContent = 'New Reminder';
   document.getElementById('rpReminderName').value = '';
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('rpReminderDate').value = today;
   document.getElementById('rpReminderDate').min = today;
   document.getElementById('rpReminderTime').value = '';
   document.getElementById('rpReminderDesc').value = '';
+  const statusEl = document.getElementById('rpReminderStatus');
+  if (statusEl) statusEl.value = 'set';
   // Clear media
   if (document.getElementById('rpMediaUrl')) document.getElementById('rpMediaUrl').value = '';
   if (document.getElementById('rpMediaName')) document.getElementById('rpMediaName').value = '';
@@ -597,6 +607,8 @@ async function openRpNewReminder() {
 function closeRpNewReminder() {
   const panel = document.getElementById('rpFormPanel');
   if (panel) panel.style.display = 'none';
+  rpEditingReminderId = null;
+  rpEditingGroupId = null;
 }
 
 async function loadRpReminderUsers() {
@@ -657,22 +669,22 @@ async function saveRpReminder() {
   const rdate = document.getElementById('rpReminderDate')?.value;
   const rtime = document.getElementById('rpReminderTime')?.value;
   const desc = (document.getElementById('rpReminderDesc')?.value || '').trim();
+  const status = document.getElementById('rpReminderStatus')?.value || 'set';
 
-  if (!name || !rdate || !rtime) { alert('Please fill Title, Date and Time'); return; }
+  if (!name || !rdate || !rtime) { rpToast('Fill Title, Date and Time', 'error'); return; }
 
   // Validate date+time is not in the past
   const selectedDT = new Date(`${rdate}T${rtime}`);
   if (selectedDT <= new Date()) {
-    alert('Cannot set reminder in the past. Please choose a future date and time.');
+    rpToast('Cannot set reminder in the past. Choose a future date/time.', 'error');
     return;
   }
 
   const checkboxes = document.querySelectorAll('#rpReminderToOptions input[type="checkbox"]:checked');
   const remindToIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
 
-  // We need a group_id to create the reminder. Use the first group the user belongs to.
-  // Fetch user's groups
-  let gid = window.currentGroupId;
+  // We need a group_id to create the reminder.
+  let gid = rpEditingGroupId || window.currentGroupId;
   if (!gid) {
     try {
       const gRes = await fetch(`${API}/api/chat/groups`, { headers: { Authorization: `Bearer ${token}` } });
@@ -682,34 +694,183 @@ async function saveRpReminder() {
       }
     } catch {}
   }
-  if (!gid) { alert('No group available. Please join a group first.'); return; }
+  if (!gid) { rpToast('No group available. Please join a group first.', 'error'); return; }
 
   const body = {
     name, remind_date: rdate, remind_time: rtime,
-    description: desc || null, status: 'set',
+    description: desc || null, status,
     remind_to_ids: remindToIds.length ? remindToIds : null,
     remind_to: remindToIds.length ? remindToIds[0] : null,
     media_url: document.getElementById('rpMediaUrl')?.value || null,
     media_name: document.getElementById('rpMediaName')?.value || null,
   };
 
+  const isEdit = !!rpEditingReminderId;
+  const url = isEdit
+    ? `${API}/api/chat/groups/${gid}/reminders/${rpEditingReminderId}`
+    : `${API}/api/chat/groups/${gid}/reminders`;
+
   try {
-    const res = await fetch(`${API}/api/chat/groups/${gid}/reminders`, {
-      method: 'POST',
+    const res = await fetch(url, {
+      method: isEdit ? 'PATCH' : 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); alert(e.detail || 'Failed to create reminder'); return; }
+    if (!res.ok) { const e = await res.json().catch(()=>({})); rpToast(e.detail || 'Failed', 'error'); return; }
+    rpToast(isEdit ? 'Updated!' : 'Created!', 'success');
     closeRpNewReminder();
     loadRemindersPage('pending');
     updateReminderNavBadge();
-  } catch { alert('Network error'); }
+  } catch { rpToast('Network error', 'error'); }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Edit Reminder (Reminders Page)
+// ═══════════════════════════════════════════════════════════════
+async function editRpReminder(rid) {
+  const card = document.querySelector(`[data-rpid="${rid}"]`);
+  if (!card) return;
+  const r = JSON.parse(card.dataset.rpjson);
+  rpEditingReminderId = rid;
+  rpEditingGroupId = r.group_id;
+
+  const panel = document.getElementById('rpFormPanel');
+  if (panel) panel.style.display = 'block';
+  const title = document.getElementById('rpFormTitle');
+  if (title) title.textContent = 'Edit Reminder';
+
+  document.getElementById('rpReminderName').value = r.name || '';
+  document.getElementById('rpReminderDate').value = r.remind_date || '';
+  document.getElementById('rpReminderTime').value = r.remind_time || '';
+  document.getElementById('rpReminderDesc').value = r.description || '';
+  const statusEl = document.getElementById('rpReminderStatus');
+  if (statusEl) statusEl.value = r.status || 'set';
+  document.getElementById('rpMediaUrl').value = r.media_url || '';
+  document.getElementById('rpMediaName').value = r.media_name || '';
+  const infoEl = document.getElementById('rpMediaInfo');
+  if (infoEl) infoEl.textContent = r.media_name ? `📎 ${r.media_name}` : '';
+
+  // Load users then pre-select
+  await loadRpReminderUsers();
+  const ids = r.remind_to_ids || (r.remind_to ? [r.remind_to] : []);
+  if (ids.length) {
+    const checkboxes = document.querySelectorAll('#rpReminderToOptions input[type="checkbox"]');
+    checkboxes.forEach(cb => { cb.checked = ids.includes(parseInt(cb.value)); });
+    updateRpReminderToSelection();
+  }
+
+  // Scroll to form
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Filter persistence (Reminders Page) — mirrors Sales Chat
+// ═══════════════════════════════════════════════════════════════
+function initRpFilters() {
+  const saved = JSON.parse(localStorage.getItem('rp_default_filter') || '{}');
+  const titleInput = document.getElementById('rpFilterTitle');
+  const personInput = document.getElementById('rpFilterPerson');
+
+  if (titleInput) titleInput.value = saved.title || '';
+  if (personInput) personInput.value = saved.person || '';
+
+  updateRpFilterBadge();
+}
+
+function setRpDefaultFilter() {
+  const title = (document.getElementById('rpFilterTitle')?.value || '').trim();
+  const person = (document.getElementById('rpFilterPerson')?.value || '').trim();
+  localStorage.setItem('rp_default_filter', JSON.stringify({ title, person }));
+  rpToast('Default filter saved!', 'success');
+  updateRpFilterBadge();
+}
+
+function clearRpFilter() {
+  const titleInput = document.getElementById('rpFilterTitle');
+  const personInput = document.getElementById('rpFilterPerson');
+  if (titleInput) titleInput.value = '';
+  if (personInput) personInput.value = '';
+  // Re-apply default filter if exists
+  const saved = JSON.parse(localStorage.getItem('rp_default_filter') || '{}');
+  if (saved.title && titleInput) titleInput.value = saved.title;
+  if (saved.person && personInput) personInput.value = saved.person;
+  applyRpFilters();
+  updateRpFilterBadge();
+}
+
+function removeRpDefaultFilter() {
+  localStorage.removeItem('rp_default_filter');
+  const titleInput = document.getElementById('rpFilterTitle');
+  const personInput = document.getElementById('rpFilterPerson');
+  if (titleInput) titleInput.value = '';
+  if (personInput) personInput.value = '';
+  applyRpFilters();
+  rpToast('Default filter removed', 'success');
+  updateRpFilterBadge();
+}
+
+function updateRpFilterBadge() {
+  const hasDefault = !!localStorage.getItem('rp_default_filter');
+  const titleVal = (document.getElementById('rpFilterTitle')?.value || '').trim();
+  const personVal = (document.getElementById('rpFilterPerson')?.value || '').trim();
+  const active = !!(titleVal || personVal);
+
+  const badge = document.getElementById('rpFilterActiveBadge');
+  if (badge) badge.style.display = active ? 'inline-flex' : 'none';
+
+  const defaultBadge = document.getElementById('rpFilterDefaultBadge');
+  if (defaultBadge) defaultBadge.style.display = hasDefault ? 'inline-flex' : 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Toast (Reminders Page)
+// ═══════════════════════════════════════════════════════════════
+function rpToast(msg, type) {
+  const c = { info: '#667781', success: '#25d366', error: '#c0392b' };
+  const el = document.createElement('div');
+  el.textContent = msg;
+  Object.assign(el.style, {
+    position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+    background: c[type] || '#667781', color: '#fff', padding: '8px 20px',
+    borderRadius: '20px', fontSize: '.85rem', zIndex: '9998',
+    boxShadow: '0 2px 10px rgba(0,0,0,.2)', fontFamily: 'inherit', pointerEvents: 'none'
+  });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Alert Tune Selector init (Reminders Page — Admin only)
+// ═══════════════════════════════════════════════════════════════
+function initRpTuneSelector() {
+  if (!userData.is_admin) return;
+  const selector = document.getElementById('rpTuneSelector');
+  if (selector) selector.style.display = '';
+  // Sync with saved tune
+  const saved = localStorage.getItem('sahjanand_alert_tune') || '1';
+  const select = document.getElementById('rpAlertTuneSelect');
+  if (select) select.value = saved;
+}
+
+// Init filters and tune on section load
+(function() {
+  // Wrap loadRemindersPage to add init calls
+  const origLoad = loadRemindersPage;
+  window.loadRemindersPage = function(tab) {
+    initRpFilters();
+    initRpTuneSelector();
+    return origLoad(tab);
+  };
+})();
+
 // Expose
-window.loadRemindersPage = loadRemindersPage;
 window.switchRemindersPageTab = switchRemindersPageTab;
 window.deleteReminderCard = deleteReminderCard;
+window.editRpReminder = editRpReminder;
+window.setRpDefaultFilter = setRpDefaultFilter;
+window.clearRpFilter = clearRpFilter;
+window.removeRpDefaultFilter = removeRpDefaultFilter;
+window.initRpFilters = initRpFilters;
 // ── Media upload for Reminders page ──
 async function uploadRpMedia(input) {
   const file = input.files[0];
