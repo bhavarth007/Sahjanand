@@ -38,34 +38,111 @@ jobs:
           mkdir -p android/app/src/main/kotlin/com/sahjanand/sahjanand
           cp native/MainActivity.kt android/app/src/main/kotlin/com/sahjanand/sahjanand/MainActivity.kt
           
-          # Set app label
-          sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/main/AndroidManifest.xml
-          sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/debug/AndroidManifest.xml || true
-          sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/profile/AndroidManifest.xml || true
+          # ── Write complete AndroidManifest.xml (replaces generated one) ──
+          cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.VIBRATE" />
+              <application
+                  android:label="Sahjanand"
+                  android:name="${applicationName}"
+                  android:icon="@mipmap/ic_launcher"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:taskAffinity=""
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data
+                          android:name="io.flutter.embedding.android.NormalTheme"
+                          android:resource="@style/NormalTheme" />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+                  <meta-data
+                      android:name="com.google.firebase.messaging.default_notification_channel_id"
+                      android:value="sahjanand_reminders" />
+                  <meta-data
+                      android:name="com.google.firebase.messaging.default_notification_icon"
+                      android:resource="@mipmap/ic_launcher" />
+              </application>
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.PROCESS_TEXT" />
+                      <data android:mimeType="text/plain" />
+                  </intent>
+              </queries>
+          </manifest>
+          MANIFEST
           
-          # Add permissions
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.CAMERA"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <uses-permission android:name="android.permission.VIBRATE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>' android/app/src/main/AndroidManifest.xml
+          # ── Write app/build.gradle with Firebase plugin ──
+          cat > android/app/build.gradle << 'BUILDGRADLE'
+          plugins {
+              id "com.android.application"
+              id "kotlin-android"
+              id "com.google.gms.google-services"
+              id "dev.flutter.flutter-gradle-plugin"
+          }
           
-          # Enable cleartext + hardware acceleration
-          sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' android/app/src/main/AndroidManifest.xml
+          android {
+              namespace = "com.sahjanand.sahjanand"
+              compileSdk = 35
+              ndkVersion = flutter.ndkVersion
           
-          # Add FCM metadata inside <application> before closing tag
-          sed -i '/<\/application>/i \        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="sahjanand_reminders" \/>\n        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@mipmap\/ic_launcher" \/>' android/app/src/main/AndroidManifest.xml
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_1_8
+                  targetCompatibility = JavaVersion.VERSION_1_8
+              }
           
-          # Set minSdk to 23 in app/build.gradle ONLY for the app module (not plugins)
-          sed -i '/defaultConfig {/,/}/ s/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle
-          sed -i '/defaultConfig {/,/}/ s/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+              kotlinOptions {
+                  jvmTarget = JavaVersion.VERSION_1_8
+              }
           
-          # Add Google Services plugin to app/build.gradle
-          sed -i '/id "dev.flutter.flutter-gradle-plugin"/a \    id "com.google.gms.google-services"' android/app/build.gradle
+              defaultConfig {
+                  applicationId = "com.sahjanand.sahjanand"
+                  minSdk = 23
+                  targetSdk = 35
+                  versionCode = flutter.versionCode
+                  versionName = flutter.versionName
+              }
           
-          # Add Google Services plugin to settings.gradle
+              buildTypes {
+                  release {
+                      signingConfig = signingConfigs.debug
+                  }
+              }
+          }
+          
+          flutter {
+              source = "../.."
+          }
+          BUILDGRADLE
+          
+          # ── Add Google Services plugin to settings.gradle ──
           sed -i '/id "org.jetbrains.kotlin.android"/a \    id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
           
-          # Copy placeholder google-services.json
-          cp android/app/google-services.json android/app/google-services.json 2>/dev/null || true
-          if [ ! -f android/app/google-services.json ]; then
-            cat > android/app/google-services.json << 'EOF'
+          # ── Write google-services.json placeholder ──
+          cat > android/app/google-services.json << 'GSJSON'
           {
             "project_info": {
               "project_number": "000000000000",
@@ -83,15 +160,9 @@ jobs:
             }],
             "configuration_version": "1"
           }
-          EOF
-          fi
+          GSJSON
           
-          # Set compileSdk via local.properties (accessible by all plugins via flutter.compileSdkVersion)
-          echo "flutter.compileSdkVersion=35" >> android/local.properties
-          echo "flutter.minSdkVersion=23" >> android/local.properties
-          echo "flutter.targetSdkVersion=35" >> android/local.properties
-          
-          # App icon
+          # ── App icon ──
           cp assets/icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
