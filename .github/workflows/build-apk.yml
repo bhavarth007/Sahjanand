@@ -138,8 +138,9 @@ jobs:
           }
           BUILDGRADLE
           
-          # ── Add Google Services plugin to settings.gradle ──
-          sed -i '/id "org.jetbrains.kotlin.android"/a \    id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
+          # ── Add Google Services plugin to settings.gradle (only if not already present) ──
+          grep -q 'com.google.gms.google-services' android/settings.gradle || \
+            sed -i '/id "org.jetbrains.kotlin.android"/a \    id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
           
           # ── Write google-services.json placeholder ──
           cat > android/app/google-services.json << 'GSJSON'
