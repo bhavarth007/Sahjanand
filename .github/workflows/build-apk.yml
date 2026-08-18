@@ -38,29 +38,37 @@ jobs:
           # Restore our original pubspec with correct dependencies
           cp pubspec.yaml.bak pubspec.yaml
           
-          # Copy our custom MainActivity with audio recording support
+          # Copy our custom MainActivity
           mkdir -p android/app/src/main/kotlin/com/sahjanand/sahjanand
           cp native/MainActivity.kt android/app/src/main/kotlin/com/sahjanand/sahjanand/MainActivity.kt
           
-          # Set app display name to "Sahjanand"
+          # Set app display name
           sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/debug/AndroidManifest.xml || true
           sed -i 's/android:label="sahjanand"/android:label="Sahjanand"/' android/app/src/profile/AndroidManifest.xml || true
+          
           # Add all permissions
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.CAMERA"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <uses-permission android:name="android.permission.VIBRATE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>' android/app/src/main/AndroidManifest.xml
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.CAMERA"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <uses-permission android:name="android.permission.VIBRATE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>' android/app/src/main/AndroidManifest.xml
+          
           # Enable cleartext traffic and hardware acceleration
           sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' android/app/src/main/AndroidManifest.xml
-          # Set compileSdk and minSdk
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+          
+          # Set compileSdk and minSdk (minSdk 24 required for record package)
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
           sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle
           sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
+          
+          # Upgrade Kotlin version in settings.gradle for record package compatibility
+          sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.22"/' android/settings.gradle
+          
           # Copy company logo as app icon
           cp assets/icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          
           # Clean resolve
           rm -f pubspec.lock
           flutter pub get
