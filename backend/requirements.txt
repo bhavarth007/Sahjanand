@@ -19,4 +19,3 @@ psycopg2-binary==2.9.9
 
 # Firebase Cloud Messaging (v1 API)
 google-auth==2.29.0
-requests==2.31.0

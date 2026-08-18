@@ -87,6 +87,16 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/health/notifications", tags=["Health"])
+async def notification_health():
+    """Check if Firebase push notification credentials are configured."""
+    from app.notifications import _load_credentials
+    creds, project_id = _load_credentials()
+    if creds and project_id:
+        return {"status": "ok", "project_id": project_id, "fcm": "configured"}
+    return {"status": "error", "fcm": "not_configured", "detail": "Set FIREBASE_CREDENTIALS_JSON_CONTENT env var"}
+
+
 @app.get("/api/config", tags=["Config"])
 async def app_config():
     """Returns public app config including logo URL for frontend use."""

@@ -7,13 +7,12 @@ or set FIREBASE_CREDENTIALS_JSON_CONTENT to the raw JSON string (for cloud deplo
 """
 import json
 import logging
-import time
+import datetime
 from typing import List, Optional
 from pathlib import Path
 
 import httpx
 from google.oauth2 import service_account
-from google.auth.transport.requests import Request as GoogleAuthRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -24,17 +23,20 @@ logger = logging.getLogger(__name__)
 
 # FCM v1 API endpoint template
 FCM_V1_URL = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
 
-# Cached credentials
+# Cached state
 _credentials = None
 _project_id = None
+_access_token = None
+_token_expiry = None
 
 
-def _get_credentials():
-    """Load and cache Firebase service account credentials."""
+def _load_credentials():
+    """Load Firebase service account credentials from env."""
     global _credentials, _project_id
 
-    if _credentials is not None and _credentials.valid:
+    if _credentials is not None:
         return _credentials, _project_id
 
     settings = get_settings()
@@ -77,15 +79,45 @@ def _get_credentials():
 
 def _get_access_token() -> Optional[str]:
     """Get a valid OAuth2 access token for FCM v1 API."""
-    creds, _ = _get_credentials()
+    global _access_token, _token_expiry, _credentials
+
+    # Return cached token if still valid (with 60s margin)
+    if _access_token and _token_expiry:
+        if datetime.datetime.utcnow() < _token_expiry - datetime.timedelta(seconds=60):
+            return _access_token
+
+    creds, _ = _load_credentials()
     if creds is None:
         return None
 
-    # Refresh if expired
-    if not creds.valid:
-        creds.refresh(GoogleAuthRequest())
+    try:
+        # Create JWT assertion and exchange for access token
+        # This uses google-auth's internal method to create the signed JWT
+        assertion = creds._make_authorization_grant_assertion()
 
-    return creds.token
+        # Exchange JWT assertion for access token using httpx (sync, quick call)
+        response = httpx.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion,
+            },
+            timeout=10.0,
+        )
+
+        if response.status_code == 200:
+            token_data = response.json()
+            _access_token = token_data["access_token"]
+            expires_in = token_data.get("expires_in", 3600)
+            _token_expiry = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
+            logger.info("FCM access token refreshed successfully")
+            return _access_token
+        else:
+            logger.error(f"Failed to get FCM access token: {response.status_code} {response.text[:200]}")
+            return None
+    except Exception as e:
+        logger.error(f"Failed to get FCM access token: {e}")
+        return None
 
 
 async def get_user_fcm_tokens(user_id: int, db: AsyncSession) -> List[str]:
@@ -115,13 +147,12 @@ async def send_push_notification(
     """
     Send push notification to one or more FCM tokens.
     Uses the FCM HTTP v1 API (OAuth2 authenticated).
-    Sends one request per token (v1 API doesn't support multicast directly).
     """
     access_token = _get_access_token()
     if not access_token:
         return
 
-    _, project_id = _get_credentials()
+    _, project_id = _load_credentials()
     if not project_id:
         return
 
@@ -161,32 +192,35 @@ async def send_push_notification(
             try:
                 resp = await client.post(url, json=message, headers=headers)
                 if resp.status_code == 200:
-                    logger.info(f"FCM v1 sent successfully to token ...{token[-8:]}")
-                elif resp.status_code == 404 or resp.status_code == 400:
-                    # Token is invalid or unregistered
-                    error_data = resp.json()
-                    error_code = error_data.get("error", {}).get("details", [{}])[0].get("errorCode", "")
-                    if error_code in ("UNREGISTERED", "INVALID_ARGUMENT"):
-                        invalid_tokens.append(token)
-                        logger.info(f"FCM token invalid/unregistered: ...{token[-8:]}")
-                    else:
+                    logger.info(f"FCM v1 sent to ...{token[-8:]}")
+                elif resp.status_code in (404, 400):
+                    try:
+                        error_data = resp.json()
+                        error_msg = error_data.get("error", {}).get("message", "")
+                        if "not found" in error_msg.lower() or "UNREGISTERED" in error_msg.upper():
+                            invalid_tokens.append(token)
+                            logger.info(f"FCM token unregistered: ...{token[-8:]}")
+                        else:
+                            logger.error(f"FCM v1 error ({resp.status_code}): {resp.text[:200]}")
+                    except Exception:
                         logger.error(f"FCM v1 error ({resp.status_code}): {resp.text[:200]}")
                 elif resp.status_code == 401:
-                    # Token expired, refresh and retry once
-                    global _credentials
-                    _credentials = None
+                    # Access token expired mid-request, refresh and retry once
+                    global _access_token, _token_expiry
+                    _access_token = None
+                    _token_expiry = None
                     new_token = _get_access_token()
                     if new_token:
                         headers["Authorization"] = f"Bearer {new_token}"
                         retry_resp = await client.post(url, json=message, headers=headers)
                         if retry_resp.status_code == 200:
-                            logger.info(f"FCM v1 sent (after refresh) to ...{token[-8:]}")
+                            logger.info(f"FCM v1 sent (refreshed) to ...{token[-8:]}")
                         else:
-                            logger.error(f"FCM v1 retry failed: {retry_resp.status_code}")
+                            logger.error(f"FCM v1 retry error: {retry_resp.status_code}")
                 else:
                     logger.error(f"FCM v1 error ({resp.status_code}): {resp.text[:200]}")
             except Exception as e:
-                logger.error(f"FCM v1 send failed for token ...{token[-8:]}: {e}")
+                logger.error(f"FCM v1 send error for ...{token[-8:]}: {e}")
 
     # Cleanup invalid tokens
     if invalid_tokens:
