@@ -106,7 +106,7 @@ jobs:
           
           android {
               namespace = "com.sahjanand.sahjanand"
-              compileSdk = 35
+              compileSdk = 34
               ndkVersion = flutter.ndkVersion
           
               compileOptions {
@@ -121,7 +121,7 @@ jobs:
               defaultConfig {
                   applicationId = "com.sahjanand.sahjanand"
                   minSdk = 23
-                  targetSdk = 35
+                  targetSdk = 34
                   versionCode = flutter.versionCode
                   versionName = flutter.versionName
               }
