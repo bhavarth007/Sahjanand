@@ -406,6 +406,56 @@ async def get_messages(
     return out
 
 
+class MessageCreate(BaseModel):
+    msg_type: str = "text"
+    content: Optional[str] = None
+    media_url: Optional[str] = None
+    media_name: Optional[str] = None
+
+
+@router.post("/groups/{gid}/messages", response_model=MessageOut, status_code=201)
+async def post_message(
+    gid: int,
+    body: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a message via REST API (used by mobile app when WebSocket is unavailable)."""
+    await require_member(current_user, gid, db)
+    if not current_user.chat_can_send:
+        raise HTTPException(403, "You are muted.")
+    content = (body.content or "").strip() or None
+    if not content and not body.media_url:
+        raise HTTPException(400, "Empty message.")
+
+    msg = ChatMessage(
+        group_id=gid, sender_id=current_user.id,
+        msg_type=body.msg_type, content=content,
+        media_url=body.media_url, media_name=body.media_name,
+    )
+    db.add(msg)
+    await db.flush()
+    await db.refresh(msg)
+
+    # Broadcast via WebSocket to all connected users
+    await manager.broadcast(gid, {
+        "event": "message", "id": msg.id, "group_id": gid,
+        "sender_id": current_user.id,
+        "sender_name": current_user.full_name or current_user.email,
+        "msg_type": body.msg_type, "content": content,
+        "media_url": body.media_url, "media_name": body.media_name,
+        "created_at": msg.created_at.isoformat(),
+    })
+
+    return MessageOut(
+        id=msg.id, group_id=gid, sender_id=current_user.id,
+        sender_name=current_user.full_name or current_user.email,
+        msg_type=msg.msg_type, content=msg.content,
+        media_url=msg.media_url, media_name=msg.media_name,
+        created_at=msg.created_at,
+    )
+
+
 @router.delete("/messages/{mid}")
 async def delete_message(
     mid: int,

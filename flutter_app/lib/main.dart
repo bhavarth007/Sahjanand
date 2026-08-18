@@ -370,19 +370,16 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     return;
   }
 
-  // Chat — send via WebSocket for instant delivery
+  // Chat — send via REST POST (server broadcasts to all via WebSocket)
   var gid = window.currentGroupId;
   if(!gid || !token) return;
-  if(window.chatWs && window.chatWs.readyState === 1){
-    window.chatWs.send(JSON.stringify({event:'message', msg_type:msgType, media_url:url, media_name:name, content:''}));
-  } else {
-    var api = window.API || '';
-    fetch(api+'/api/chat/groups/'+gid+'/messages',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({msg_type:msgType, media_url:url, media_name:name, content:''})
-    }).then(function(){ if(typeof refreshChatMessages==='function') refreshChatMessages(); });
-  }
+  fetch('/api/chat/groups/' + gid + '/messages', {
+    method: 'POST',
+    headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+    body: JSON.stringify({msg_type: msgType, media_url: url, media_name: name, content: ''})
+  }).then(function(r){ return r.json(); }).then(function(){
+    if(typeof refreshChatMessages === 'function') refreshChatMessages();
+  }).catch(function(){});
 })();
     ''');
   }
