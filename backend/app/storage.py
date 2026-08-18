@@ -1,82 +1,101 @@
 """
 Supabase Storage — upload media files (images, audio, video)
+Uses httpx to call Supabase Storage REST API directly (no supabase-py dependency).
 Files are stored in a public bucket and served via Supabase CDN.
 """
 import uuid
 from pathlib import Path
-from supabase import create_client, Client
+import httpx
 from app.config import get_settings
 
 settings = get_settings()
 
-# Bucket name for all media uploads
 BUCKET_NAME = "media"
 
-# Initialize Supabase client (using service key for storage operations)
-_supabase: Client | None = None
+
+def _headers():
+    return {
+        "apikey": settings.SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
+    }
 
 
-def get_supabase() -> Client:
-    global _supabase
-    if _supabase is None:
-        if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
-            raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env")
-        _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-    return _supabase
+def _storage_url(path: str = "") -> str:
+    return f"{settings.SUPABASE_URL}/storage/v1{path}"
 
 
 def ensure_bucket():
     """Create the media bucket if it doesn't exist (called once on startup)."""
-    sb = get_supabase()
-    try:
-        sb.storage.get_bucket(BUCKET_NAME)
-    except Exception:
-        # Bucket doesn't exist — create it as public
-        sb.storage.create_bucket(BUCKET_NAME, options={"public": True})
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
+        print("⚠️ Supabase not configured — skipping bucket setup")
+        return
+
+    # Check if bucket exists
+    r = httpx.get(_storage_url("/bucket"), headers=_headers(), timeout=10)
+    if r.status_code == 200:
+        buckets = r.json()
+        if any(b.get("name") == BUCKET_NAME for b in buckets):
+            return  # Already exists
+
+    # Create public bucket
+    httpx.post(
+        _storage_url("/bucket"),
+        headers={**_headers(), "Content-Type": "application/json"},
+        json={"id": BUCKET_NAME, "name": BUCKET_NAME, "public": True},
+        timeout=10,
+    )
 
 
 def upload_file(file_bytes: bytes, original_filename: str) -> dict:
     """
     Upload a file to Supabase Storage.
-    Returns: {"url": "https://...public URL", "path": "media/xxx.ext", "name": "original.ext"}
+    Returns: {"media_url": "https://...public URL", "media_name": "original.ext", "msg_type": "image|voice|video"}
     """
-    sb = get_supabase()
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
 
-    # Generate unique filename preserving extension
+    # Generate unique filename
     ext = Path(original_filename).suffix.lower() if original_filename else ""
     unique_name = f"{uuid.uuid4().hex}{ext}"
-
-    # Determine content type
     content_type = _get_content_type(ext)
 
-    # Upload to bucket
-    sb.storage.from_(BUCKET_NAME).upload(
-        path=unique_name,
-        file=file_bytes,
-        file_options={"content-type": content_type, "upsert": "true"},
+    # Upload via REST API
+    r = httpx.post(
+        _storage_url(f"/object/{BUCKET_NAME}/{unique_name}"),
+        headers={
+            **_headers(),
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        },
+        content=file_bytes,
+        timeout=60,
     )
 
-    # Get public URL
-    public_url = sb.storage.from_(BUCKET_NAME).get_public_url(unique_name)
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"Supabase upload failed: {r.status_code} {r.text}")
 
-    # Determine media type
-    msg_type = _get_msg_type(ext)
+    # Public URL
+    public_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{BUCKET_NAME}/{unique_name}"
 
     return {
         "media_url": public_url,
         "media_name": original_filename or unique_name,
-        "msg_type": msg_type,
+        "msg_type": _get_msg_type(ext),
         "storage_path": unique_name,
     }
 
 
 def delete_file(storage_path: str):
-    """Delete a file from Supabase Storage by its path."""
+    """Delete a file from Supabase Storage."""
     try:
-        sb = get_supabase()
-        sb.storage.from_(BUCKET_NAME).remove([storage_path])
+        httpx.delete(
+            _storage_url(f"/object/{BUCKET_NAME}"),
+            headers={**_headers(), "Content-Type": "application/json"},
+            json={"prefixes": [storage_path]},
+            timeout=10,
+        )
     except Exception:
-        pass  # Non-critical — file may already be deleted
+        pass
 
 
 def _get_content_type(ext: str) -> str:
