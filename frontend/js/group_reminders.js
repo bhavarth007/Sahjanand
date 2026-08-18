@@ -419,17 +419,22 @@ async function checkUpcomingAlerts() {
 function showReminderNotification(r, withBuzz) {
   const dateStr = formatRDate(r.remind_date);
   const timeStr = formatRTime(r.remind_time);
+  // Show all targeted person names
+  const toNames = r.remind_to_names && r.remind_to_names.length
+    ? r.remind_to_names.join(', ')
+    : (r.remind_to_name || '');
   const el = document.createElement('div');
   el.className = 'reminder-notification';
   el.innerHTML = `
     <button class="reminder-notif-close" onclick="this.parentElement.remove()"><i class="fa-solid fa-xmark"></i></button>
-    <div class="reminder-notif-header"><i class="fa-solid fa-bell"></i> Reminder${withBuzz?' ⚡ Alert!':''}</div>
+    <div class="reminder-notif-header"><i class="fa-solid fa-bell"></i> ${withBuzz ? 'Reminder ⚡ Alert!' : 'New Reminder'}</div>
     <div class="reminder-notif-body">
-      <strong>${esc(r.created_by_name||'Someone')}</strong> has set a reminder${r.remind_to_name?' for <strong>'+esc(r.remind_to_name)+'</strong>':''}.
+      <strong>${esc(r.created_by_name||'Someone')}</strong> has set a reminder${toNames ? ' for <strong>' + esc(toNames) + '</strong>' : ''}.
       <br><br>
+      <b>📌 Title:</b> ${esc(r.name)}<br>
       <b>📅 Date:</b> ${dateStr}<br>
       <b>⏰ Time:</b> ${timeStr}<br>
-      ${r.description ? `<b>📝 Description:</b> ${esc(r.description)}<br>` : ''}
+      ${r.description ? `<b>📝 Note:</b> ${esc(r.description)}<br>` : ''}
       ${r.media_url ? `<b>📎 Attachment:</b> <a href="${esc(r.media_url)}" target="_blank">${esc(r.media_name||'View')}</a><br>` : ''}
     </div>
   `;

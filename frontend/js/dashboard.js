@@ -1109,8 +1109,12 @@ async function checkGlobalUpcomingAlerts() {
 // Browser notification (works when tab is in background)
 function sendBrowserNotification(r, title) {
   if ('Notification' in window && Notification.permission === 'granted') {
+    const toNames = r.remind_to_names && r.remind_to_names.length
+      ? r.remind_to_names.join(', ')
+      : (r.remind_to_name || '');
+    const timeStr = formatReminderTime(r.remind_time);
     new Notification(title, {
-      body: `${r.name} — ${r.remind_time}`,
+      body: `${r.name}${toNames ? ' → ' + toNames : ''} — ${timeStr}`,
       icon: '/assets/images/logo.png',
       tag: `reminder_${r.id}_${title}`,
       requireInteraction: true,
@@ -1190,15 +1194,19 @@ function handleNotifBellClick() {
 window.handleNotifBellClick = handleNotifBellClick;
 
 function showGlobalReminderAlert(r, isUrgent) {
-  const dateStr = r.remind_date || '';
-  const timeStr = r.remind_time || '';
+  const dateStr = formatReminderDate(r.remind_date);
+  const timeStr = formatReminderTime(r.remind_time);
+  // Show all targeted person names
+  const toNames = r.remind_to_names && r.remind_to_names.length
+    ? r.remind_to_names.join(', ')
+    : (r.remind_to_name || '');
   const el = document.createElement('div');
   el.className = 'reminder-notification';
   el.innerHTML = `
     <button class="reminder-notif-close" onclick="this.parentElement.remove()"><i class="fa-solid fa-xmark"></i></button>
     <div class="reminder-notif-header"><i class="fa-solid fa-bell"></i> ${isUrgent ? '⚡ Reminder Alert!' : 'New Reminder'}</div>
     <div class="reminder-notif-body">
-      <strong>${escHtml(r.created_by_name || 'Someone')}</strong> has set a reminder${r.remind_to_name ? ' for <strong>' + escHtml(r.remind_to_name) + '</strong>' : ''}.
+      <strong>${escHtml(r.created_by_name || 'Someone')}</strong> has set a reminder${toNames ? ' for <strong>' + escHtml(toNames) + '</strong>' : ''}.
       <br><br>
       <b>📌 Title:</b> ${escHtml(r.name)}<br>
       <b>📅 Date:</b> ${dateStr}<br>
