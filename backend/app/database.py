@@ -7,7 +7,14 @@ settings = get_settings()
 db_url = settings.async_database_url
 
 # SQLite needs check_same_thread=False
-connect_args = {"check_same_thread": False} if "sqlite" in db_url else {}
+# PostgreSQL pooler needs prepared_statement_cache_size=0
+if "sqlite" in db_url:
+    connect_args = {"check_same_thread": False}
+elif "pooler.supabase" in db_url:
+    # Supabase session pooler doesn't support prepared statements
+    connect_args = {"prepared_statement_cache_size": 0, "statement_cache_size": 0}
+else:
+    connect_args = {}
 
 engine = create_async_engine(
     db_url,
