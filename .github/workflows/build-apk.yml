@@ -49,10 +49,42 @@ jobs:
           # Enable cleartext + hardware acceleration
           sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' android/app/src/main/AndroidManifest.xml
           
+          # Add FCM metadata inside <application> before closing tag
+          sed -i '/<\/application>/i \        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="sahjanand_reminders" \/>\n        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@mipmap\/ic_launcher" \/>' android/app/src/main/AndroidManifest.xml
+          
           # Set minSdk to 23 in app/build.gradle ONLY for the app module (not plugins)
-          # Use a targeted replacement that only affects the defaultConfig block
           sed -i '/defaultConfig {/,/}/ s/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle
           sed -i '/defaultConfig {/,/}/ s/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+          
+          # Add Google Services plugin to app/build.gradle
+          sed -i '/id "dev.flutter.flutter-gradle-plugin"/a \    id "com.google.gms.google-services"' android/app/build.gradle
+          
+          # Add Google Services plugin to settings.gradle
+          sed -i '/id "org.jetbrains.kotlin.android"/a \    id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
+          
+          # Copy placeholder google-services.json
+          cp android/app/google-services.json android/app/google-services.json 2>/dev/null || true
+          if [ ! -f android/app/google-services.json ]; then
+            cat > android/app/google-services.json << 'EOF'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "sahjanand-placeholder",
+              "storage_bucket": "sahjanand-placeholder.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                "android_client_info": { "package_name": "com.sahjanand.sahjanand" }
+              },
+              "oauth_client": [],
+              "api_key": [{ "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }],
+              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+            }],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
           
           # Set compileSdk via local.properties (accessible by all plugins via flutter.compileSdkVersion)
           echo "flutter.compileSdkVersion=35" >> android/local.properties
