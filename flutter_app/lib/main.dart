@@ -18,29 +18,178 @@ const String kProductionUrl = 'https://sahjanand-api.onrender.com';
 const MethodChannel _recorderChannel = MethodChannel('com.sahjanand.recorder');
 
 // ═══════════════════════════════════════════════════════════════
+// NOTIFICATION CHANNELS
+// ═══════════════════════════════════════════════════════════════
+const String _chatChannelId = 'sahjanand_chat';
+const String _chatChannelName = 'Chat Messages';
+const String _chatChannelDesc = 'New chat messages from groups';
+
+const String _reminderChannelId = 'sahjanand_reminders';
+const String _reminderChannelName = 'Reminders';
+const String _reminderChannelDesc = 'Reminder alerts — alarm style';
+
+// Reply action key
+const String _replyActionId = 'reply_action';
+const String _replyInputKey = 'reply_text';
+
+// ═══════════════════════════════════════════════════════════════
 // FCM Background message handler (must be top-level)
 // ═══════════════════════════════════════════════════════════════
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  // Show local notification for background messages
-  await _showLocalNotification(message);
+  await _initLocalNotificationsMinimal();
+  await _showSmartNotification(message.data);
 }
 
 // Local notifications plugin (global for background access)
 final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
-Future<void> _showLocalNotification(RemoteMessage message) async {
-  final notification = message.notification;
-  final data = message.data;
+/// Minimal init for background isolate
+Future<void> _initLocalNotificationsMinimal() async {
+  const initSettings = InitializationSettings(
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+  );
+  await _localNotifications.initialize(
+    initSettings,
+    onDidReceiveNotificationResponse: _onNotificationResponse,
+    onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
+  );
+}
 
-  final title = notification?.title ?? data['title'] ?? 'Sahjanand';
-  final body = notification?.body ?? data['body'] ?? 'New notification';
+/// Handle notification tap or reply action in foreground
+void _onNotificationResponse(NotificationResponse response) {
+  if (response.notificationResponseType == NotificationResponseType.selectedNotificationAction) {
+    if (response.actionId == _replyActionId && response.input != null) {
+      _sendReplyFromNotification(response.input!, response.payload);
+    }
+  }
+}
 
+/// Handle notification reply in background (top-level)
+@pragma('vm:entry-point')
+void _onBackgroundNotificationResponse(NotificationResponse response) {
+  if (response.actionId == _replyActionId && response.input != null) {
+    _sendReplyFromNotification(response.input!, response.payload);
+  }
+}
+
+/// Send reply directly to backend from notification action
+Future<void> _sendReplyFromNotification(String replyText, String? payload) async {
+  if (replyText.trim().isEmpty || payload == null) return;
+  try {
+    final data = jsonDecode(payload);
+    final groupName = data['group_name'] ?? '';
+    final authToken = data['auth_token'] ?? '';
+    final groupId = data['group_id'] ?? '';
+
+    if (authToken.isEmpty || groupId.isEmpty) return;
+
+    await http.post(
+      Uri.parse('$kProductionUrl/api/chat/groups/$groupId/messages'),
+      headers: {
+        'Authorization': 'Bearer $authToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'msg_type': 'text',
+        'content': replyText.trim(),
+      }),
+    );
+  } catch (_) {}
+}
+
+/// Show notification based on data payload type
+Future<void> _showSmartNotification(Map<String, dynamic> data) async {
+  final type = data['type'] ?? '';
+  final title = data['title'] ?? 'Sahjanand';
+  final body = data['body'] ?? '';
+
+  if (type == 'chat') {
+    await _showChatNotification(title, body, data);
+  } else if (type == 'reminder_alert' || type == 'reminder') {
+    await _showReminderNotification(title, body, data);
+  } else {
+    await _showGenericNotification(title, body);
+  }
+}
+
+/// Chat notification with reply action (WhatsApp style)
+Future<void> _showChatNotification(String title, String body, Map<String, dynamic> data) async {
+  final androidDetails = AndroidNotificationDetails(
+    _chatChannelId,
+    _chatChannelName,
+    channelDescription: _chatChannelDesc,
+    importance: Importance.max,
+    priority: Priority.high,
+    showWhen: true,
+    enableVibration: true,
+    vibrationPattern: Int64List.fromList([0, 300, 100, 300]),
+    playSound: true,
+    icon: '@mipmap/ic_launcher',
+    category: AndroidNotificationCategory.message,
+    styleInformation: BigTextStyleInformation(body, contentTitle: title),
+    actions: <AndroidNotificationAction>[
+      const AndroidNotificationAction(
+        _replyActionId,
+        'Reply',
+        icon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
+        showsUserInterface: false,
+        inputs: <AndroidNotificationActionInput>[
+          AndroidNotificationActionInput(label: 'Type a reply...'),
+        ],
+      ),
+    ],
+  );
+
+  // Store auth info in payload for reply handling
+  final payload = jsonEncode(data);
+
+  await _localNotifications.show(
+    DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    title,
+    body,
+    NotificationDetails(android: androidDetails),
+    payload: payload,
+  );
+}
+
+/// Reminder notification — alarm style with long vibration and full-screen intent
+Future<void> _showReminderNotification(String title, String body, Map<String, dynamic> data) async {
+  final androidDetails = AndroidNotificationDetails(
+    _reminderChannelId,
+    _reminderChannelName,
+    channelDescription: _reminderChannelDesc,
+    importance: Importance.max,
+    priority: Priority.high,
+    showWhen: true,
+    enableVibration: true,
+    // 5 second vibration pattern: vibrate 1s, pause 0.5s, vibrate 1s, pause 0.5s, vibrate 1.5s
+    vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1500]),
+    playSound: true,
+    icon: '@mipmap/ic_launcher',
+    category: AndroidNotificationCategory.alarm,
+    fullScreenIntent: true,
+    ongoing: true,
+    autoCancel: true,
+    ticker: 'Reminder Alert!',
+    styleInformation: BigTextStyleInformation(body, contentTitle: title),
+  );
+
+  await _localNotifications.show(
+    DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    title,
+    body,
+    NotificationDetails(android: androidDetails),
+  );
+}
+
+/// Generic notification fallback
+Future<void> _showGenericNotification(String title, String body) async {
   const androidDetails = AndroidNotificationDetails(
-    'sahjanand_reminders',
-    'Reminders & Messages',
-    channelDescription: 'Reminder alerts and chat messages',
+    _chatChannelId,
+    _chatChannelName,
+    channelDescription: _chatChannelDesc,
     importance: Importance.max,
     priority: Priority.high,
     showWhen: true,
@@ -66,24 +215,41 @@ void main() async {
   // Set up background message handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // Initialize local notifications
+  // Initialize local notifications with action handling
   const initSettings = InitializationSettings(
     android: AndroidInitializationSettings('@mipmap/ic_launcher'),
   );
-  await _localNotifications.initialize(initSettings);
-
-  // Create notification channel (Android 8+)
-  const channel = AndroidNotificationChannel(
-    'sahjanand_reminders',
-    'Reminders & Messages',
-    description: 'Reminder alerts and chat messages',
-    importance: Importance.max,
-    playSound: true,
-    enableVibration: true,
+  await _localNotifications.initialize(
+    initSettings,
+    onDidReceiveNotificationResponse: _onNotificationResponse,
+    onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
   );
-  await _localNotifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
+
+  // Create notification channels (Android 8+)
+  final androidPlugin = _localNotifications
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+  if (androidPlugin != null) {
+    // Chat channel — with reply action support
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      _chatChannelId,
+      _chatChannelName,
+      description: _chatChannelDesc,
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    ));
+
+    // Reminder channel — alarm style, long vibration
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      _reminderChannelId,
+      _reminderChannelName,
+      description: _reminderChannelDesc,
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    ));
+  }
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -177,14 +343,25 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     // Listen for token refresh
     messaging.onTokenRefresh.listen(_registerFcmToken);
 
-    // Handle foreground messages — show local notification
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      _showLocalNotification(message);
+    // Handle foreground messages — show local notification with reply action
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      final data = Map<String, dynamic>.from(message.data);
+
+      // Inject auth token into data so reply action can use it
+      try {
+        final tr = await _controller.runJavaScriptReturningResult(
+            'localStorage.getItem("sahjanand_token")');
+        final token = tr.toString().replaceAll('"', '');
+        if (token != 'null' && token.isNotEmpty) {
+          data['auth_token'] = token;
+        }
+      } catch (_) {}
+
+      await _showSmartNotification(data);
+
       // Also show in-app banner
-      final notification = message.notification;
-      final data = message.data;
-      final title = notification?.title ?? data['title'] ?? '';
-      final body = notification?.body ?? data['body'] ?? '';
+      final title = data['title'] ?? '';
+      final body = data['body'] ?? '';
       if (title.isNotEmpty || body.isNotEmpty) {
         _showNotif(title, body, data['type'] ?? 'reminder');
       }
@@ -192,7 +369,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
     // Handle notification tap when app was in background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      // Navigate to the app — WebView will reload
       _controller.runJavaScript('if(typeof refreshChatMessages==="function")refreshChatMessages();');
     });
   }

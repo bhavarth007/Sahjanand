@@ -465,6 +465,7 @@ async def post_message(
             recipient_user_ids=member_ids,
             sender_id=current_user.id,
             db=db,
+            group_id=gid,
         )
     except Exception:
         pass  # Don't fail the message send if push fails
@@ -609,6 +610,7 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                             recipient_user_ids=member_ids,
                             sender_id=user.id,
                             db=db,
+                            group_id=group_id,
                         )
                     except Exception:
                         pass

@@ -145,8 +145,13 @@ async def send_push_notification(
     data: Optional[dict] = None,
 ) -> None:
     """
-    Send push notification to one or more FCM tokens.
+    Send DATA-ONLY push notification to one or more FCM tokens.
     Uses the FCM HTTP v1 API (OAuth2 authenticated).
+    
+    IMPORTANT: We intentionally do NOT include a 'notification' field.
+    Data-only messages always trigger the Flutter background handler,
+    even when the app is killed. This gives us full control over
+    notification display (reply actions, vibration, channels, etc.)
     """
     access_token = _get_access_token()
     if not access_token:
@@ -163,28 +168,23 @@ async def send_push_notification(
         "Content-Type": "application/json",
     }
 
-    # Ensure all data values are strings (FCM v1 requirement)
+    # Build data payload — include title and body as data fields
+    # FCM v1 requires all data values to be strings
     str_data = {k: str(v) for k, v in (data or {}).items()}
+    str_data["title"] = title
+    str_data["body"] = body
 
     invalid_tokens = []
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         for token in tokens:
+            # DATA-ONLY message — no 'notification' field
             message = {
                 "message": {
                     "token": token,
-                    "notification": {
-                        "title": title,
-                        "body": body,
-                    },
                     "data": str_data,
                     "android": {
                         "priority": "high",
-                        "notification": {
-                            "channel_id": "sahjanand_reminders",
-                            "sound": "default",
-                            "priority": "high",
-                        },
                     },
                 }
             }
@@ -254,6 +254,7 @@ async def notify_new_chat_message(
     recipient_user_ids: List[int],
     sender_id: int,
     db: AsyncSession,
+    group_id: int = 0,
 ) -> None:
     """Send push notification for new chat messages to all group members except sender."""
     target_ids = [uid for uid in recipient_user_ids if uid != sender_id]
@@ -278,7 +279,7 @@ async def notify_new_chat_message(
         tokens=tokens,
         title=f"{sender_name} in {group_name}",
         body=body_text,
-        data={"type": "chat", "group_name": group_name},
+        data={"type": "chat", "group_name": group_name, "group_id": str(group_id)},
     )
 
 
