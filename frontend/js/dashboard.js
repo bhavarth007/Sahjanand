@@ -89,6 +89,53 @@ function setUserInfo() {
   if (mobileInput) mobileInput.value = userData.mobile_no || '';
 }
 
+// ── Save Profile ────────────────────────────────────────
+async function saveProfile() {
+  const name = (document.getElementById('editName')?.value || '').trim();
+  const mobile = (document.getElementById('editMobile')?.value || '').trim();
+  const msgEl = document.getElementById('profileMsg');
+
+  // Client-side validation
+  if (!name) { showProfileMsg('Please enter your full name.', 'error'); return; }
+  if (mobile && (!/^\d{10}$/.test(mobile))) { showProfileMsg('Mobile number must be exactly 10 digits.', 'error'); return; }
+
+  try {
+    const res = await fetch(`${API}/api/auth/profile`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ full_name: name, mobile_no: mobile || null }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showProfileMsg(err.detail || 'Failed to update profile.', 'error');
+      return;
+    }
+
+    const updatedUser = await res.json();
+    // Update local storage and UI
+    Object.assign(userData, updatedUser);
+    localStorage.setItem('sahjanand_user', JSON.stringify(userData));
+    setUserInfo();
+    showProfileMsg('Profile updated successfully!', 'success');
+  } catch {
+    showProfileMsg('Network error. Please try again.', 'error');
+  }
+}
+
+function showProfileMsg(msg, type) {
+  const el = document.getElementById('profileMsg');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.color = type === 'error' ? 'var(--primary)' : '#25d366';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+window.saveProfile = saveProfile;
+
 function setGreeting() {
   const hour  = new Date().getHours();
   let greet   = 'Good morning';

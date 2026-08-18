@@ -613,10 +613,14 @@
           <input type="email" id="editEmail" style="width:100%;margin-top:6px;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:0.95rem;font-family:inherit;background:#f9f5f3;outline:none;" readonly />
         </div>
         <div style="display:flex;gap:12px;">
-          <button class="btn-primary" style="flex:1;justify-content:center;" onclick="logout()">
+          <button class="btn-primary" style="flex:1;justify-content:center;" onclick="saveProfile()">
+            <i class="fa-solid fa-floppy-disk"></i> Save Changes
+          </button>
+          <button class="btn-secondary" style="flex:1;justify-content:center;" onclick="logout()">
             <i class="fa-solid fa-right-from-bracket"></i> Logout
           </button>
         </div>
+        <div id="profileMsg" style="margin-top:12px;font-size:0.85rem;text-align:center;display:none;"></div>
       </div>
 
       <!-- ── Admin: User List (CRUD) — only visible to admins ── -->

@@ -31,6 +31,11 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    mobile_no: Optional[str] = None
+
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
