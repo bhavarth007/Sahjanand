@@ -81,8 +81,9 @@ function renderReminders(items, tab) {
     const toLabel = toNames.length ? `<span class="reminder-row-to">→ ${toNames.map(n => esc(n)).join(', ')}</span>` : '';
     const descHtml = r.description ? `<div class="reminder-row-desc">${esc(r.description)}</div>` : '';
     const mediaHtml = r.media_url ? buildMediaPreview(r.media_url, r.media_name) : '';
-    const editBtn = tab==='pending' ? `<button class="reminder-row-edit" onclick="editReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
-    const deleteBtn = (JSON.parse(localStorage.getItem('sahjanand_user')||'{}').is_admin) ? `<button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
+    const isAdmin = JSON.parse(localStorage.getItem('sahjanand_user')||'{}').is_admin;
+    const editBtn = (tab==='pending' && isAdmin) ? `<button class="reminder-row-edit" onclick="editReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
+    const deleteBtn = isAdmin ? `<button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
 
     return `
     <div class="reminder-row" data-rid="${r.id}" data-json='${JSON.stringify(r).replace(/'/g,"&#39;")}'>

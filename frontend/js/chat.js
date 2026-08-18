@@ -521,15 +521,43 @@ async function submitCreateGroup() {
 // ═══════════════════════════════════════════════════════════════
 function deleteGroupPrompt() {
   if (!groups.length) { toast('No groups to delete','error'); return; }
-  // Build a simple selection
-  const names = groups.map(g => `${g.id}: ${g.name}`).join('\n');
-  const input = prompt(`Enter the group name to delete:\n\n${groups.map(g=>g.name).join('\n')}`);
-  if (!input || !input.trim()) return;
-  const group = groups.find(g => g.name.toLowerCase() === input.trim().toLowerCase());
-  if (!group) { toast('Group not found','error'); return; }
-  const action = currentIsAdmin ? 'permanently DELETE for all users' : 'leave';
-  if (!confirm(`Are you sure you want to ${action} "${group.name}"?`)) return;
-  deleteGroup(group.id);
+
+  const existing = document.getElementById('deleteGroupModal');
+  if (existing) existing.remove();
+
+  const groupOptions = groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+
+  const modal = document.createElement('div');
+  modal.id = 'deleteGroupModal';
+  modal.className = 'admin-modal-overlay';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="admin-modal" style="max-width:400px;">
+      <div class="admin-modal-header" style="background:#c0392b;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0;">
+        <h4 style="margin:0;color:#fff;font-size:1rem;"><i class="fa-solid fa-trash-can" style="margin-right:8px;"></i>Delete Group</h4>
+        <button class="chat-icon-btn" onclick="document.getElementById('deleteGroupModal').remove()" style="color:#fff;background:rgba(255,255,255,0.15);"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div style="padding:20px;">
+        <label style="font-size:.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">Select Group to Delete</label>
+        <select id="deleteGroupSelect" style="width:100%;margin-top:6px;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;">
+          ${groupOptions}
+        </select>
+        <p style="margin-top:12px;font-size:.8rem;color:#c0392b;"><i class="fa-solid fa-triangle-exclamation"></i> This will permanently delete the group and all messages.</p>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
+          <button onclick="document.getElementById('deleteGroupModal').remove()" style="padding:9px 18px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-size:.85rem;cursor:pointer;font-family:inherit;">Cancel</button>
+          <button onclick="confirmDeleteGroup()" style="padding:9px 18px;border:none;border-radius:8px;background:#c0392b;color:#fff;font-size:.85rem;cursor:pointer;font-family:inherit;font-weight:600;">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function confirmDeleteGroup() {
+  const select = document.getElementById('deleteGroupSelect');
+  if (!select || !select.value) return;
+  const gid = parseInt(select.value);
+  document.getElementById('deleteGroupModal')?.remove();
+  deleteGroup(gid);
 }
 
 async function deleteGroup(gid) {
@@ -645,7 +673,7 @@ async function pollNewMessages() {
 setTimeout(startChatPolling, 3000);
 window.renameGroup=renameGroup; window.createGroup=createGroup;
 window.deleteGroupPrompt=deleteGroupPrompt; window.deleteGroup=deleteGroup;
-window.submitCreateGroup=submitCreateGroup;
+window.submitCreateGroup=submitCreateGroup; window.confirmDeleteGroup=confirmDeleteGroup;
 window.toggleUserInfo=function(el){
   const detail=el.querySelector('.chat-user-detail');
   if(!detail)return;
