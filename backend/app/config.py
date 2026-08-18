@@ -25,8 +25,11 @@ class Settings(BaseSettings):
 
     LOGO_URL: str = "/assets/images/logo.png"
 
-    # Firebase Cloud Messaging (for push notifications)
-    FCM_SERVER_KEY: str = ""  # Firebase Console → Project Settings → Cloud Messaging → Server Key
+    # Firebase Cloud Messaging (for push notifications via v1 API)
+    # Option 1: Path to service account JSON file
+    FIREBASE_CREDENTIALS_JSON: str = ""
+    # Option 2: Raw JSON content as string (for cloud deployments like Render)
+    FIREBASE_CREDENTIALS_JSON_CONTENT: str = ""
 
     @property
     def async_database_url(self) -> str:

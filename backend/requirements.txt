@@ -16,3 +16,6 @@ alembic==1.13.1
 aiosqlite==0.20.0
 asyncpg==0.29.0
 psycopg2-binary==2.9.9
+
+# Firebase Cloud Messaging (v1 API)
+google-auth==2.29.0
