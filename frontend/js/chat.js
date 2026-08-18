@@ -81,12 +81,17 @@ function renderUserList(filter) {
     const name = u.full_name || u.email;
     const online = chatOnline.has(u.id) ? 'online' : '';
     const role = u.designation || (u.is_admin ? 'Admin' : 'Member');
-    return `<div class="chat-member-item">
+    return `<div class="chat-member-item" onclick="toggleUserInfo(this)">
       <div class="chat-member-avatar ${online}">${chatInit(name)}</div>
       <div class="chat-member-info">
         <div class="chat-member-name">${esc(name)}</div>
         <div class="chat-member-role">${esc(role)}</div>
-      </div></div>`;
+      </div>
+      <div class="chat-user-detail" style="display:none;width:100%;padding:8px 0 4px 48px;">
+        <div style="font-size:.75rem;color:var(--text-muted);"><i class="fa-solid fa-briefcase" style="width:14px;"></i> ${esc(u.designation || 'No designation')}</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px;"><i class="fa-solid fa-envelope" style="width:14px;"></i> ${esc(u.email)}</div>
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -455,21 +460,58 @@ async function renameGroup() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Create new group (admin)
+// Create new group (admin) — Professional modal instead of prompt()
 // ═══════════════════════════════════════════════════════════════
 async function createGroup() {
-  const name=prompt('Enter new group name:');
-  if(!name||!name.trim())return;
-  // Check duplicate locally
-  if(groups.find(g=>g.name.toLowerCase()===name.trim().toLowerCase())){toast('A group with this name already exists','error');return;}
+  // Show themed modal
+  const existing = document.getElementById('createGroupModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'createGroupModal';
+  modal.className = 'admin-modal-overlay';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="admin-modal" style="max-width:400px;">
+      <div class="admin-modal-header" style="background:linear-gradient(135deg, var(--primary), var(--primary-dark));color:#fff;padding:16px 20px;border-radius:12px 12px 0 0;">
+        <h4 style="margin:0;color:#fff;font-size:1rem;"><i class="fa-solid fa-users" style="margin-right:8px;"></i>Create New Group</h4>
+        <button class="chat-icon-btn" onclick="document.getElementById('createGroupModal').remove()" style="color:#fff;background:rgba(255,255,255,0.15);"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div style="padding:20px;">
+        <label style="font-size:.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">Group Name</label>
+        <input type="text" id="createGroupNameInput" placeholder="e.g. Sales Team, Marketing..." style="width:100%;margin-top:6px;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;" autofocus />
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
+          <button onclick="document.getElementById('createGroupModal').remove()" style="padding:9px 18px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-size:.85rem;cursor:pointer;font-family:inherit;">Cancel</button>
+          <button onclick="submitCreateGroup()" class="btn-primary" style="padding:9px 18px;">Create Group</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // Focus input
+  setTimeout(() => document.getElementById('createGroupNameInput')?.focus(), 100);
+
+  // Enter key
+  document.getElementById('createGroupNameInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitCreateGroup();
+  });
+}
+
+async function submitCreateGroup() {
+  const input = document.getElementById('createGroupNameInput');
+  const name = (input?.value || '').trim();
+  if (!name) { input?.focus(); return; }
+
+  if(groups.find(g=>g.name.toLowerCase()===name.toLowerCase())){toast('A group with this name already exists','error');return;}
   const token=localStorage.getItem('sahjanand_token');
   try{
-    const res=await fetch(`${CHAT_API}/api/chat/groups`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({name:name.trim()})});
+    const res=await fetch(`${CHAT_API}/api/chat/groups`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({name:name})});
     if(!res.ok){const e=await res.json().catch(()=>({}));toast(e.detail||'Failed','error');return;}
     const g=await res.json();
     groups.push(g); renderGroupList(); selectGroup(g.id);
     toast('Group created!','success');
   }catch{toast('Network error','error');}
+  document.getElementById('createGroupModal')?.remove();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -601,4 +643,12 @@ async function pollNewMessages() {
 setTimeout(startChatPolling, 3000);
 window.renameGroup=renameGroup; window.createGroup=createGroup;
 window.deleteGroupPrompt=deleteGroupPrompt; window.deleteGroup=deleteGroup;
+window.submitCreateGroup=submitCreateGroup;
+window.toggleUserInfo=function(el){
+  const detail=el.querySelector('.chat-user-detail');
+  if(!detail)return;
+  // Close all others
+  document.querySelectorAll('.chat-user-detail').forEach(d=>{if(d!==detail)d.style.display='none';});
+  detail.style.display=detail.style.display==='none'?'block':'none';
+};
 })();

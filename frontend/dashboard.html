@@ -219,6 +219,17 @@
             <button class="btn-primary" id="addReminderBtn" onclick="openReminderForm()" style="padding:6px 14px;font-size:.8rem;">
               <i class="fa-solid fa-plus"></i> New Reminder
             </button>
+            <!-- Alert Tune Selector (Admin only) -->
+            <div id="tuneSelector" style="display:none;">
+              <select id="alertTuneSelect" onchange="setAlertTune(this.value)" style="padding:5px 10px;font-size:.75rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;cursor:pointer;background:#fff;">
+                <option value="1">🔔 Classic Siren</option>
+                <option value="2">🎵 Rising Beeps</option>
+                <option value="3">🔊 Triple Pulse</option>
+                <option value="4">🛎 Bell Chime</option>
+                <option value="5">🚨 Urgent Alarm</option>
+              </select>
+              <button onclick="playGlobalAlertSound()" style="padding:4px 8px;font-size:.7rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:#f9f5f3;margin-left:4px;" title="Preview">▶</button>
+            </div>
           </div>
         </div>
 

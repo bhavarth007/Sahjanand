@@ -82,6 +82,7 @@ function renderReminders(items, tab) {
     const descHtml = r.description ? `<div class="reminder-row-desc">${esc(r.description)}</div>` : '';
     const mediaHtml = r.media_url ? buildMediaPreview(r.media_url, r.media_name) : '';
     const editBtn = tab==='pending' ? `<button class="reminder-row-edit" onclick="editReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
+    const deleteBtn = (JSON.parse(localStorage.getItem('sahjanand_user')||'{}').is_admin) ? `<button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
 
     return `
     <div class="reminder-row" data-rid="${r.id}" data-json='${JSON.stringify(r).replace(/'/g,"&#39;")}'>
@@ -93,7 +94,7 @@ function renderReminders(items, tab) {
       </div>
       <span class="reminder-row-status ${statusClass}">${statusLabel}</span>
       ${editBtn}
-      <button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
+      ${deleteBtn}
     </div>`;
   }).join('');
 }
@@ -441,42 +442,25 @@ function showReminderNotification(r, withBuzz) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Sound: distinctive 5-second alarm (urgent siren-like pattern)
+// Sound: uses the global playGlobalAlertSound from dashboard.js
 // ═══════════════════════════════════════════════════════════════
 function playAlertSound() {
-  try {
-    // Vibrate phone (works on Android WebView)
-    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
-
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const now = ctx.currentTime;
-    const duration = 5; // 5 seconds total
-
-    // Create an urgent two-tone siren pattern
-    for (let t = 0; t < duration; t += 0.4) {
-      // High tone
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.connect(gain1); gain1.connect(ctx.destination);
-      osc1.type = 'square';
-      osc1.frequency.value = 1200;
-      gain1.gain.value = 0.15;
-      osc1.start(now + t);
-      osc1.stop(now + t + 0.18);
-
-      // Low tone (offset by 0.2s)
-      if (t + 0.2 < duration) {
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
-        osc2.connect(gain2); gain2.connect(ctx.destination);
-        osc2.type = 'square';
-        osc2.frequency.value = 800;
-        gain2.gain.value = 0.15;
-        osc2.start(now + t + 0.2);
-        osc2.stop(now + t + 0.38);
+  if (typeof playGlobalAlertSound === 'function') {
+    playGlobalAlertSound();
+  } else {
+    // Fallback
+    try {
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = ctx.currentTime;
+      for (let t = 0; t < 5; t += 0.4) {
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = 'square'; osc.frequency.value = t % 0.8 < 0.4 ? 1200 : 800;
+        g.gain.value = 0.12; osc.start(now + t); osc.stop(now + t + 0.18);
       }
-    }
-  } catch(e) { console.warn('[alert sound]', e); }
+    } catch(e) {}
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

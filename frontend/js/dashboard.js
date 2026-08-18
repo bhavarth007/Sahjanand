@@ -455,7 +455,7 @@ function renderReminderCards(items, tab, grid) {
     const toNames = r.remind_to_names && r.remind_to_names.length ? r.remind_to_names.join(', ') : (r.remind_to_name || '');
     const desc = r.description || '';
     const cardClass = isHistory ? 'rp-card rp-card-history' : 'rp-card';
-    const deleteBtn = (isHistory && isAdmin) ? `<button class="rp-card-delete" onclick="deleteReminderCard(${r.id}, ${r.group_id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
+    const deleteBtn = isAdmin ? `<button class="rp-card-delete" onclick="deleteReminderCard(${r.id}, ${r.group_id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
 
     // Media preview — compact icons
     let mediaHtml = '';
@@ -1013,23 +1013,91 @@ function escHtml(s) {
 
 function playGlobalAlertSound() {
   try {
-    // Vibrate phone (works on Android WebView)
-    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
-    
+    // Vibrate phone 5 seconds pattern
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300, 100, 300, 100, 300, 100, 300, 100, 300]);
+
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const now = ctx.currentTime;
-    for (let t = 0; t < 3; t += 0.4) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'square';
-      osc.frequency.value = t % 0.8 < 0.4 ? 1200 : 800;
-      gain.gain.value = 0.12;
-      osc.start(now + t);
-      osc.stop(now + t + 0.18);
+    const tune = localStorage.getItem('sahjanand_alert_tune') || '1';
+
+    // 5 different tunes — 5 seconds each
+    switch(tune) {
+      case '1': // Classic siren
+        for (let t = 0; t < 5; t += 0.4) {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.connect(g); g.connect(ctx.destination);
+          osc.type = 'square'; osc.frequency.value = t % 0.8 < 0.4 ? 1200 : 800;
+          g.gain.value = 0.12; osc.start(now + t); osc.stop(now + t + 0.18);
+        } break;
+      case '2': // Rising beeps
+        for (let t = 0; t < 5; t += 0.3) {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.connect(g); g.connect(ctx.destination);
+          osc.type = 'sine'; osc.frequency.value = 600 + (t * 150);
+          g.gain.value = 0.15; osc.start(now + t); osc.stop(now + t + 0.15);
+        } break;
+      case '3': // Triple pulse
+        for (let t = 0; t < 5; t += 0.6) {
+          for (let b = 0; b < 3; b++) {
+            const osc = ctx.createOscillator(); const g = ctx.createGain();
+            osc.connect(g); g.connect(ctx.destination);
+            osc.type = 'triangle'; osc.frequency.value = 1000;
+            g.gain.value = 0.18; osc.start(now + t + b*0.12); osc.stop(now + t + b*0.12 + 0.08);
+          }
+        } break;
+      case '4': // Bell chime
+        for (let t = 0; t < 5; t += 0.5) {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.connect(g); g.connect(ctx.destination);
+          osc.type = 'sine'; osc.frequency.value = [880, 1100, 660, 880, 1320][Math.floor(t/0.5) % 5];
+          g.gain.setValueAtTime(0.2, now + t); g.gain.exponentialRampToValueAtTime(0.01, now + t + 0.4);
+          osc.start(now + t); osc.stop(now + t + 0.45);
+        } break;
+      case '5': // Urgent alarm
+        for (let t = 0; t < 5; t += 0.2) {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.connect(g); g.connect(ctx.destination);
+          osc.type = 'sawtooth'; osc.frequency.value = t % 0.4 < 0.2 ? 1500 : 900;
+          g.gain.value = 0.08; osc.start(now + t); osc.stop(now + t + 0.1);
+        } break;
+      default: // Fallback = tune 1
+        for (let t = 0; t < 5; t += 0.4) {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.connect(g); g.connect(ctx.destination);
+          osc.type = 'square'; osc.frequency.value = t % 0.8 < 0.4 ? 1200 : 800;
+          g.gain.value = 0.12; osc.start(now + t); osc.stop(now + t + 0.18);
+        }
     }
   } catch {}
 }
 
 // Start the global checker as soon as dashboard loads
 startGlobalReminderChecker();
+
+// ═══════════════════════════════════════════════════════════════
+// Alert Tune Selector (Admin only)
+// ═══════════════════════════════════════════════════════════════
+function initTuneSelector() {
+  const sel = document.getElementById('tuneSelector');
+  if (!sel) return;
+  if (userData && userData.is_admin) {
+    sel.style.display = 'inline-flex';
+    sel.style.alignItems = 'center';
+    sel.style.gap = '4px';
+    const select = document.getElementById('alertTuneSelect');
+    if (select) select.value = localStorage.getItem('sahjanand_alert_tune') || '1';
+  }
+}
+
+function setAlertTune(val) {
+  localStorage.setItem('sahjanand_alert_tune', val);
+  // Save to server for all users via config endpoint (simple approach: store in localStorage for now)
+  // Admin sets it, all devices pick it up from the global checker response
+  // For simplicity: broadcast via a hidden field or keep it in localStorage (each device)
+  playGlobalAlertSound();
+}
+window.setAlertTune = setAlertTune;
+window.playGlobalAlertSound = playGlobalAlertSound;
+
+// Initialize tune selector after DOM ready
+setTimeout(initTuneSelector, 500);
