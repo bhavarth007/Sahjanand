@@ -933,14 +933,16 @@
 
 /* ── WhatsApp-style message tick marks ──────────────────────── */
 .msg-tick {
-  font-size: .78rem;
+  font-size: .7rem;
   line-height: 1;
-  font-weight: 700;
-  letter-spacing: -.05em;
   user-select: none;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
   transition: color .25s;
 }
+.msg-tick i { font-size: .7rem; }
 /* Single grey tick — sent */
 .msg-tick-sent  { color: #aaa; }
 /* Double grey tick — delivered (received but not opened) */

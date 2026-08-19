@@ -53,21 +53,27 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // CRITICAL: WidgetsFlutterBinding must be initialized FIRST in background isolate.
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await _initLocalNotificationsMinimal();
 
-  // With NOTIFICATION+DATA hybrid approach:
-  // - When app is in background/killed, the SYSTEM already shows the notification
-  //   from the 'notification' field in the FCM message (like Telegram does).
-  // - We do NOT show a duplicate local notification here.
-  // - This handler is only for background logic (updating state, etc.)
+  // ALWAYS show our own notification in background handler, regardless of whether
+  // the system also showed one. We use a deterministic notification ID based on
+  // the message data — if the system already showed a notification, ours replaces
+  // it (same channel, similar content). If the system notification was suppressed
+  // by aggressive OEM battery optimization (Xiaomi, Samsung, Oppo, Vivo), then
+  // OUR notification will be the one that shows.
   //
-  // The system notification is shown automatically by Android OS without needing
-  // our app to be running — this is WHY notifications now work when app is killed.
-  //
-  // Only show our own notification if there's NO system notification
-  // (i.e., the message is data-only, which happens for topic messages)
-  if (message.notification == null && message.data.isNotEmpty) {
-    await _initLocalNotificationsMinimal();
+  // This "belt AND suspenders" approach ensures notifications ALWAYS appear:
+  // - Stock Android: System shows from 'notification' field → ours updates/replaces it
+  // - OEM phones that suppress: System fails silently → ours is the only one shown
+  if (message.data.isNotEmpty) {
     await _showSmartNotification(message.data);
+  } else if (message.notification != null) {
+    // Fallback: if only notification field (no data), still show
+    await _showSmartNotification({
+      'title': message.notification!.title ?? 'Sahjanand',
+      'body': message.notification!.body ?? '',
+      'type': 'chat',
+    });
   }
 }
 
@@ -386,8 +392,12 @@ Future<void> _showChatNotification(
 
   final payload = jsonEncode(data);
 
+  // Use group_id as notification ID so each group shows only the latest message
+  // (like WhatsApp). Also prevents duplicate with system notification.
+  final groupId = int.tryParse(data['group_id']?.toString() ?? '') ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
   await _localNotifications.show(
-    DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    groupId,
     title,
     body,
     NotificationDetails(android: androidDetails),
@@ -423,7 +433,8 @@ Future<void> _showReminderNotification(
   );
 
   await _localNotifications.show(
-    DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    // Use title hashCode as notification ID to prevent duplicates for same reminder
+    (data['title']?.toString() ?? title).hashCode.abs() % 100000,
     title,
     body,
     NotificationDetails(android: androidDetails),

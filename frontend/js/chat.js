@@ -217,22 +217,23 @@ function buildBubble(msg) {
   const deleteBtn = (mine || currentIsAdmin) ? `<button class="msg-delete-btn" onclick="deleteMessage(${msg.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
 
   // WhatsApp-style tick marks (only for sender's own messages)
+  // Uses Font Awesome: fa-check for single tick, fa-check-double for double tick
   let tickHtml = '';
   if (mine) {
     const seen = msg.seen_count || 0;
     const total = msg.member_count || 0;
     if (total === 0) {
       // Single tick: sent (no other members yet)
-      tickHtml = `<span class="msg-tick msg-tick-sent" data-msg-id="${msg.id}" title="Sent">✓</span>`;
+      tickHtml = `<span class="msg-tick msg-tick-sent" data-msg-id="${msg.id}" title="Sent"><i class="fa-solid fa-check"></i></span>`;
     } else if (seen >= total) {
       // Double blue tick: all members seen
-      tickHtml = `<span class="msg-tick msg-tick-seen" data-msg-id="${msg.id}" title="Seen by all">✓✓</span>`;
+      tickHtml = `<span class="msg-tick msg-tick-seen" data-msg-id="${msg.id}" title="Seen by all"><i class="fa-solid fa-check-double"></i></span>`;
     } else if (seen > 0) {
-      // Double grey tick: some members seen
-      tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered (${seen}/${total} seen)">✓✓</span>`;
+      // Double grey tick: some members seen (partially read)
+      tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered (${seen}/${total} seen)"><i class="fa-solid fa-check-double"></i></span>`;
     } else {
-      // Double grey tick: delivered (message received, nobody has opened chat yet)
-      tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered">✓✓</span>`;
+      // Double grey tick: delivered but not opened yet
+      tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered"><i class="fa-solid fa-check-double"></i></span>`;
     }
   }
 
@@ -351,15 +352,15 @@ function updateMsgTick(msgId, seenCount, memberCount) {
   tickEl.className = 'msg-tick';
   if (!memberCount || memberCount === 0) {
     tickEl.className += ' msg-tick-sent';
-    tickEl.textContent = '✓';
+    tickEl.innerHTML = '<i class="fa-solid fa-check"></i>';
     tickEl.title = 'Sent';
   } else if (seenCount >= memberCount) {
     tickEl.className += ' msg-tick-seen';
-    tickEl.textContent = '✓✓';
+    tickEl.innerHTML = '<i class="fa-solid fa-check-double"></i>';
     tickEl.title = 'Seen by all';
   } else {
     tickEl.className += ' msg-tick-delivered';
-    tickEl.textContent = '✓✓';
+    tickEl.innerHTML = '<i class="fa-solid fa-check-double"></i>';
     tickEl.title = seenCount > 0 ? `Delivered (${seenCount}/${memberCount} seen)` : 'Delivered';
   }
 }

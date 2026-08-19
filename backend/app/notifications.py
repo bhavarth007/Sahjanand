@@ -206,7 +206,10 @@ async def send_push_notification(
         channel_id = "sahjanand_chat"
         sound = "chat_tone"
 
-    # Android config — high priority wakes device from Doze
+    # Android config — high priority wakes device from Doze.
+    # The 'notification' sub-object tells Android OS how to display when app is killed.
+    # channel_id must match exactly what Flutter creates on the device.
+    # sound is for Android 7 and below; Android 8+ uses the channel's sound setting.
     android_config = {
         "priority": "high",
         "ttl": f"{ttl_seconds}s",
@@ -214,10 +217,7 @@ async def send_push_notification(
         "notification": {
             "channel_id": channel_id,
             "sound": sound,
-            "notification_priority": "PRIORITY_MAX",
-            "visibility": "PUBLIC",
-            "default_vibrate_timings": False,
-            "default_sound": False,
+            "notification_priority": "PRIORITY_HIGH",
         },
     }
     if collapse_key:

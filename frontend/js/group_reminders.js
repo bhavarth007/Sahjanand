@@ -161,12 +161,17 @@ async function loadReminderUsers() {
     const res = await fetch(`${R_API}/api/chat/all-users`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) return;
     const users = await res.json();
-    // Non-admin users cannot select admin in the list (except themselves)
+    // Exclude current user from the list — you set reminders for OTHERS, not yourself.
+    // Non-admin users also cannot see admin users in the list.
     const isAdmin = currentUserData.is_admin;
     const currentUserId = currentUserData.id;
-    const filteredUsers = isAdmin
-      ? users
-      : users.filter(u => !u.is_admin || u.id === currentUserId);
+    const filteredUsers = users.filter(u => {
+      // Always exclude self
+      if (u.id === currentUserId) return false;
+      // Non-admin cannot assign to admin
+      if (!isAdmin && u.is_admin) return false;
+      return true;
+    });
 
     container.innerHTML = `
       <div class="multi-select-dropdown" id="reminderToDropdown">
