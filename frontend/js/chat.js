@@ -335,9 +335,15 @@ function handleWs(d) {
   switch(d.event) {
     case 'message':
       appendMsg(d, true);
-      // Send delivery ACK for messages from other users (I received it)
+      // If this message is from another user, we need to ACK it
       if (d.sender_id !== currentUserId && d.id && chatWs && chatWs.readyState === 1) {
+        // The user is actively VIEWING this chat right now, so this message is:
+        // 1. Delivered (device received it) — AND
+        // 2. Read (user is looking at the chat window)
+        // Send both delivery AND read ACK immediately (like WhatsApp — if you're
+        // in the conversation, incoming messages go straight to blue tick)
         chatWs.send(JSON.stringify({ event: 'deliver', message_ids: [d.id] }));
+        chatWs.send(JSON.stringify({ event: 'read' }));
       }
       break;
     case 'message_deleted': const el=document.querySelector(`[data-msg-id="${d.id}"]`); if(el) el.remove(); break;

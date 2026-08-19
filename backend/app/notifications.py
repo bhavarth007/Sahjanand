@@ -217,7 +217,8 @@ async def send_push_notification(
         "notification": {
             "channel_id": channel_id,
             "sound": sound,
-            "notification_priority": "PRIORITY_HIGH",
+            "notification_priority": "PRIORITY_MAX",
+            "default_vibrate_timings": True,
         },
     }
     if collapse_key:
