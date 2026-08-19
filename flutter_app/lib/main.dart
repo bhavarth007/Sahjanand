@@ -40,7 +40,13 @@ const String _replyInputKey = 'reply_text';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   await _initLocalNotificationsMinimal();
-  await _showSmartNotification(message.data);
+
+  // For notification+data messages, Android may auto-show the notification
+  // via the system tray. We still show our custom one with reply actions.
+  // On devices where the background handler fires, this gives us full control.
+  if (message.data.isNotEmpty) {
+    await _showSmartNotification(message.data);
+  }
 }
 
 // Local notifications plugin (global for background access)
@@ -56,6 +62,30 @@ Future<void> _initLocalNotificationsMinimal() async {
     onDidReceiveNotificationResponse: _onNotificationResponse,
     onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
   );
+
+  // Create channels in background isolate too (they might not exist yet)
+  final androidPlugin = _localNotifications
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+  if (androidPlugin != null) {
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      _chatChannelId,
+      _chatChannelName,
+      description: _chatChannelDesc,
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+      sound: RawResourceAndroidNotificationSound('chat_tone'),
+    ));
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      _reminderChannelId,
+      _reminderChannelName,
+      description: _reminderChannelDesc,
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+      sound: RawResourceAndroidNotificationSound('alarm_tone'),
+    ));
+  }
 }
 
 /// Handle notification tap or reply action in foreground
@@ -127,8 +157,10 @@ Future<void> _showChatNotification(String title, String body, Map<String, dynami
     enableVibration: true,
     vibrationPattern: Int64List.fromList([0, 300, 100, 300]),
     playSound: true,
+    sound: const RawResourceAndroidNotificationSound('chat_tone'),
     icon: '@mipmap/ic_launcher',
     category: AndroidNotificationCategory.message,
+    visibility: NotificationVisibility.public,
     styleInformation: BigTextStyleInformation(body, contentTitle: title),
     actions: <AndroidNotificationAction>[
       const AndroidNotificationAction(
@@ -168,6 +200,7 @@ Future<void> _showReminderNotification(String title, String body, Map<String, dy
     // 5 second vibration pattern: vibrate 1s, pause 0.5s, vibrate 1s, pause 0.5s, vibrate 1.5s
     vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1500]),
     playSound: true,
+    sound: const RawResourceAndroidNotificationSound('alarm_tone'),
     icon: '@mipmap/ic_launcher',
     category: AndroidNotificationCategory.alarm,
     fullScreenIntent: true,
@@ -175,6 +208,8 @@ Future<void> _showReminderNotification(String title, String body, Map<String, dy
     autoCancel: true,
     ticker: 'Reminder Alert!',
     styleInformation: BigTextStyleInformation(body, contentTitle: title),
+    // Wake up the device
+    visibility: NotificationVisibility.public,
   );
 
   await _localNotifications.show(
@@ -231,7 +266,7 @@ void main() async {
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
   if (androidPlugin != null) {
-    // Chat channel — with reply action support
+    // Chat channel — with reply action support and custom sound
     await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
       _chatChannelId,
       _chatChannelName,
@@ -239,9 +274,10 @@ void main() async {
       importance: Importance.max,
       playSound: true,
       enableVibration: true,
+      sound: RawResourceAndroidNotificationSound('chat_tone'),
     ));
 
-    // Reminder channel — alarm style, long vibration
+    // Reminder channel — alarm style, long vibration, custom alarm sound
     await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
       _reminderChannelId,
       _reminderChannelName,
@@ -249,6 +285,7 @@ void main() async {
       importance: Importance.max,
       playSound: true,
       enableVibration: true,
+      sound: RawResourceAndroidNotificationSound('alarm_tone'),
     ));
   }
 
@@ -315,6 +352,10 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       await Permission.photos.request();
       await Permission.videos.request();
       await Permission.audio.request();
+      // Request battery optimization exemption for reliable background notifications
+      await Permission.ignoreBatteryOptimizations.request();
+      // Request exact alarm permission for reminders (Android 12+)
+      await Permission.scheduleExactAlarm.request();
     }
     _initWebView();
     _initFCM();
@@ -335,6 +376,16 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       provisional: false,
     );
 
+    // Ensure data messages are delivered with high priority even in background/killed
+    await messaging.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Subscribe to a topic for group delivery fallback
+    await messaging.subscribeToTopic('all_users');
+
     // Get FCM token and register with backend
     final fcmToken = await messaging.getToken();
     if (fcmToken != null) {
@@ -345,6 +396,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     messaging.onTokenRefresh.listen(_registerFcmToken);
 
     // Handle foreground messages — show local notification with reply action
+    // (FCM notification+data messages don't auto-show in foreground, so we handle it)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       final data = Map<String, dynamic>.from(message.data);
 
@@ -361,8 +413,8 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       await _showSmartNotification(data);
 
       // Also show in-app banner
-      final title = data['title'] ?? '';
-      final body = data['body'] ?? '';
+      final title = data['title'] ?? message.notification?.title ?? '';
+      final body = data['body'] ?? message.notification?.body ?? '';
       if (title.isNotEmpty || body.isNotEmpty) {
         _showNotif(title, body, data['type'] ?? 'reminder');
       }

@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 FCM_V1_URL = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
+# Android notification channel IDs (must match Flutter app)
+_chat_channel = "sahjanand_chat"
+_reminder_channel = "sahjanand_reminders"
+
 # Cached state
 _credentials = None
 _project_id = None
@@ -145,13 +149,15 @@ async def send_push_notification(
     data: Optional[dict] = None,
 ) -> None:
     """
-    Send DATA-ONLY push notification to one or more FCM tokens.
+    Send push notification to one or more FCM tokens using notification+data hybrid.
     Uses the FCM HTTP v1 API (OAuth2 authenticated).
     
-    IMPORTANT: We intentionally do NOT include a 'notification' field.
-    Data-only messages always trigger the Flutter background handler,
-    even when the app is killed. This gives us full control over
-    notification display (reply actions, vibration, channels, etc.)
+    Strategy: notification+data hybrid for maximum delivery reliability.
+    - Top-level 'notification': ensures Android shows it even when app is killed
+      by aggressive OEMs (Xiaomi, Samsung, Oppo, Vivo, etc.)
+    - 'data' payload: Flutter background handler uses this to show custom
+      notification with reply actions when the handler fires
+    - android.priority=high + ttl=0s: immediate delivery, bypasses Doze mode
     """
     access_token = _get_access_token()
     if not access_token:
@@ -178,13 +184,35 @@ async def send_push_notification(
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         for token in tokens:
-            # DATA-ONLY message — no 'notification' field
+            # Use notification+data hybrid for maximum delivery reliability.
+            # - Top-level notification: ensures Android shows it even if app is killed
+            #   by aggressive OEMs (Xiaomi, Samsung, Oppo, Vivo, etc.)
+            # - Data payload: Flutter background handler uses this to show our
+            #   custom notification with reply actions (replacing the auto-shown one)
+            # - android.priority=high + ttl=0s: immediate delivery, bypasses Doze
+            notification_type = str_data.get("type", "")
+            channel_id = _reminder_channel if notification_type in ("reminder", "reminder_alert") else _chat_channel
+
             message = {
                 "message": {
                     "token": token,
                     "data": str_data,
+                    "notification": {
+                        "title": title,
+                        "body": body,
+                    },
                     "android": {
                         "priority": "high",
+                        "ttl": "0s",
+                        "direct_boot_ok": True,
+                        "notification": {
+                            "channel_id": channel_id,
+                            "notification_priority": "PRIORITY_MAX",
+                            "visibility": "PUBLIC",
+                            "default_vibrate_timings": False,
+                            "vibrate_timings": ["0s", "0.3s", "0.1s", "0.3s"] if notification_type == "chat" else ["0s", "1s", "0.5s", "1s", "0.5s", "1.5s"],
+                            "default_sound": True,
+                        },
                     },
                 }
             }

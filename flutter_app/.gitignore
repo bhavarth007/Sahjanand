@@ -42,5 +42,8 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Don't track android project - regenerated in CI
-/android/
+# Android build outputs (but keep source files tracked)
+/android/.gradle/
+/android/app/build/
+/android/build/
+/android/local.properties
