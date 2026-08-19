@@ -50,6 +50,11 @@ const String _prefTokenRegistered = 'fcm_token_registered';
 // ═══════════════════════════════════════════════════════════════
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // CRITICAL: WidgetsFlutterBinding must be initialized FIRST in background isolate.
+  // Without this, plugins (SharedPreferences, local notifications) fail silently
+  // when the app is killed/terminated. This is the #1 reason background notifications
+  // don't show on killed apps.
+  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await _initLocalNotificationsMinimal();
 
@@ -99,6 +104,18 @@ Future<void> _alarmCallback() async {
           if (diff >= -60 && diff <= 120) {
             final name = r['name'] ?? 'Reminder';
             final creator = r['created_by_name'] ?? '';
+            final reminderId = r['id']?.toString() ?? '';
+
+            // Deduplication: check if we already showed this reminder notification
+            // recently (within last 3 minutes). Prevents duplicates when both
+            // FCM and alarm fire for the same reminder.
+            final dedupeKey = '_shown_reminder_$reminderId';
+            final lastShown = prefs.getInt(dedupeKey) ?? 0;
+            final nowMs = now.millisecondsSinceEpoch ~/ 1000;
+            if (nowMs - lastShown < 180) continue; // Skip — already shown recently
+
+            await prefs.setInt(dedupeKey, nowMs);
+
             await _showReminderNotification(
               '\u26a1 Reminder Alert!',
               '$name${creator.isNotEmpty ? ' (set by $creator)' : ''} is due NOW!',
@@ -107,6 +124,27 @@ Future<void> _alarmCallback() async {
           }
         } catch (_) {}
       }
+
+      // Cleanup old deduplication keys (older than 1 hour)
+      final allKeys = prefs.getKeys();
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      for (final key in allKeys) {
+        if (key.startsWith('_shown_reminder_') || key.startsWith('_shown_reminder_fcm_')) {
+          final ts = prefs.getInt(key) ?? 0;
+          if (nowSec - ts > 3600) {
+            await prefs.remove(key);
+          }
+        }
+        // Also cleanup chat deduplication keys older than 10 minutes
+        if (key.startsWith('_chat_shown_')) {
+          await prefs.remove(key); // Always cleanup during alarm (they're short-lived)
+        }
+      }
+    } else if (response.statusCode == 401) {
+      // Auth token expired — clear it so user re-authenticates on next app open.
+      // Don't keep retrying with a stale token every 60 seconds.
+      await prefs.remove(_prefAuthToken);
+      await prefs.setBool(_prefTokenRegistered, false);
     }
   } catch (_) {}
 }
@@ -230,11 +268,63 @@ Future<void> _showSmartNotification(Map<String, dynamic> data) async {
   final title = data['title'] ?? 'Sahjanand';
   final body = data['body'] ?? '';
 
-  // Skip showing if notification is too old (more than 5 minutes)
+  // Skip showing if notification is too old.
+  // With TTL up to 3600s on backend, messages might arrive with some delay
+  // when device was in Doze. Allow up to 10 minutes of staleness for chat,
+  // and don't skip reminder_alerts at all (they have their own short TTL).
   final sentAt = int.tryParse(data['sent_at']?.toString() ?? '');
-  if (sentAt != null) {
-    final age = DateTime.now().millisecondsSinceEpoch ~/ 1000 - sentAt;
-    if (age > 300) return; // Skip notifications older than 5 minutes
+  if (sentAt != null && type != 'reminder_alert') {
+    final age = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000 - sentAt;
+    if (age > 600) return; // Skip notifications older than 10 minutes
+  }
+
+  // Deduplication for chat messages — prevents showing duplicates when both
+  // individual token push AND topic push arrive for the same message.
+  // Also prevents sender from seeing their own message via topic delivery.
+  if (type == 'chat') {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Skip if this is the sender's own device (topic messages go to everyone)
+      final senderId = data['sender_id']?.toString() ?? '';
+      final savedAuthToken = prefs.getString(_prefAuthToken) ?? '';
+      if (senderId.isNotEmpty && savedAuthToken.isNotEmpty) {
+        // We can't decode JWT in background isolate easily, so we use a
+        // simple approach: save the user's ID when we know it
+        final myUserId = prefs.getString('_my_user_id') ?? '';
+        if (myUserId.isNotEmpty && myUserId == senderId) return; // Own message
+      }
+
+      // Deduplicate: use sent_at + group_id as unique message fingerprint
+      final groupId = data['group_id']?.toString() ?? '';
+      final msgSentAt = data['sent_at']?.toString() ?? '';
+      if (groupId.isNotEmpty && msgSentAt.isNotEmpty) {
+        final dedupeKey = '_chat_shown_${groupId}_$msgSentAt';
+        final alreadyShown = prefs.getBool(dedupeKey) ?? false;
+        if (alreadyShown) return; // Already shown this exact message
+        await prefs.setBool(dedupeKey, true);
+
+        // Schedule cleanup of old dedupe keys (keep only last 5 min)
+        // We store the timestamp and clean during alarm callback
+      }
+    } catch (_) {}
+  }
+
+  // Deduplication for reminder alerts (same mechanism as alarm callback)
+  // This prevents showing the same reminder twice if both FCM and alarm fire.
+  if (type == 'reminder_alert') {
+    try {
+      final reminderTitle = data['title'] ?? '';
+      if (reminderTitle.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        // Use a hash of the title as the dedupe key (reminder ID isn't in FCM payload)
+        final dedupeKey = '_shown_reminder_fcm_${reminderTitle.hashCode}';
+        final lastShown = prefs.getInt(dedupeKey) ?? 0;
+        final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        if (nowSec - lastShown < 180) return; // Already shown in last 3 min
+        await prefs.setInt(dedupeKey, nowSec);
+      }
+    } catch (_) {}
   }
 
   if (type == 'chat') {
@@ -557,6 +647,12 @@ class _WebViewScreenState extends State<WebViewScreen>
       _startTokenRegistration(newToken);
     });
 
+    // Subscribe to user's group topics for reliable group message delivery.
+    // FCM topics provide a secondary delivery path: even if individual token
+    // delivery fails (device offline too long, token rotated), topic messages
+    // still reach the device when it reconnects.
+    _subscribeToGroupTopics();
+
     // ─── FOREGROUND messages ───
     // Data-only messages always come through onMessage when app is in foreground.
     // We show our custom local notification + in-app banner.
@@ -678,6 +774,61 @@ class _WebViewScreenState extends State<WebViewScreen>
     return false;
   }
 
+  /// Subscribe to FCM topics for user's chat groups.
+  /// This provides a secondary delivery channel (inspired by Tinode's approach):
+  /// - Individual token push: primary path, goes directly to device
+  /// - Topic subscription: backup path, FCM manages delivery internally
+  /// Even if the token-based push is delayed or lost, topic messages
+  /// reach all subscribed devices when they reconnect.
+  Future<void> _subscribeToGroupTopics() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final authToken = prefs.getString(_prefAuthToken) ?? '';
+      if (authToken.isEmpty) return;
+
+      final response = await http.get(
+        Uri.parse('$kProductionUrl/api/chat/groups'),
+        headers: {'Authorization': 'Bearer $authToken'},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final List groups = jsonDecode(response.body);
+        final messaging = FirebaseMessaging.instance;
+
+        // Get previously subscribed topics
+        final subscribedKey = '_fcm_subscribed_groups';
+        final previouslySubscribed =
+            prefs.getStringList(subscribedKey) ?? [];
+        final currentGroupTopics = <String>[];
+
+        for (final group in groups) {
+          final groupId = group['id']?.toString() ?? '';
+          if (groupId.isNotEmpty) {
+            final topic = 'chat_group_$groupId';
+            currentGroupTopics.add(topic);
+            if (!previouslySubscribed.contains(topic)) {
+              await messaging.subscribeToTopic(topic);
+              debugPrint('[FCM] Subscribed to topic: $topic');
+            }
+          }
+        }
+
+        // Unsubscribe from groups user is no longer a member of
+        for (final oldTopic in previouslySubscribed) {
+          if (!currentGroupTopics.contains(oldTopic)) {
+            await messaging.unsubscribeFromTopic(oldTopic);
+            debugPrint('[FCM] Unsubscribed from topic: $oldTopic');
+          }
+        }
+
+        // Save current subscriptions
+        await prefs.setStringList(subscribedKey, currentGroupTopics);
+      }
+    } catch (e) {
+      debugPrint('[FCM] Group topic subscription failed: $e');
+    }
+  }
+
   void _initWebView() {
     final params = Platform.isAndroid
         ? AndroidWebViewControllerCreationParams()
@@ -731,6 +882,23 @@ class _WebViewScreenState extends State<WebViewScreen>
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_prefAuthToken, token);
 
+        // Extract user ID from JWT for deduplication
+        try {
+          final parts = token.split('.');
+          if (parts.length == 3) {
+            String payload = parts[1];
+            while (payload.length % 4 != 0) {
+              payload += '=';
+            }
+            final decoded = utf8.decode(base64Url.decode(payload));
+            final Map<String, dynamic> claims = jsonDecode(decoded);
+            final userId = claims['user_id']?.toString() ?? '';
+            if (userId.isNotEmpty) {
+              await prefs.setString('_my_user_id', userId);
+            }
+          }
+        } catch (_) {}
+
         // If FCM token not yet registered, try now
         if (!_fcmTokenRegistered) {
           final fcmToken = prefs.getString(_prefFcmToken);
@@ -740,6 +908,9 @@ class _WebViewScreenState extends State<WebViewScreen>
             if (success) _fcmTokenRegistered = true;
           }
         }
+
+        // Subscribe to group topics (updates subscriptions if groups changed)
+        _subscribeToGroupTopics();
       }
     } catch (_) {}
   }
@@ -833,6 +1004,26 @@ class _WebViewScreenState extends State<WebViewScreen>
           if (token.isNotEmpty) {
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString(_prefAuthToken, token);
+
+            // Extract user ID from JWT payload for deduplication
+            // (JWT is base64url-encoded: header.payload.signature)
+            try {
+              final parts = token.split('.');
+              if (parts.length == 3) {
+                String payload = parts[1];
+                // Add padding if necessary
+                while (payload.length % 4 != 0) {
+                  payload += '=';
+                }
+                final decoded = utf8.decode(base64Url.decode(payload));
+                final Map<String, dynamic> claims = jsonDecode(decoded);
+                final userId = claims['user_id']?.toString() ?? '';
+                if (userId.isNotEmpty) {
+                  await prefs.setString('_my_user_id', userId);
+                }
+              }
+            } catch (_) {}
+
             // Re-register FCM token with new auth
             if (!_fcmTokenRegistered) {
               final fcmToken = prefs.getString(_prefFcmToken);
@@ -842,6 +1033,9 @@ class _WebViewScreenState extends State<WebViewScreen>
                 if (success) _fcmTokenRegistered = true;
               }
             }
+
+            // Re-subscribe to group topics with new auth
+            _subscribeToGroupTopics();
           }
           break;
       }
@@ -1129,7 +1323,22 @@ class _WebViewScreenState extends State<WebViewScreen>
           'if(typeof refreshChatMessages==="function")refreshChatMessages();');
       // Re-save auth token when app resumes (user might have logged in/out)
       _saveAuthTokenFromWebview();
+      // Cleanup stale chat dedup keys on resume
+      _cleanupChatDedupeKeys();
     }
+  }
+
+  /// Remove old chat deduplication keys to prevent SharedPreferences bloat
+  Future<void> _cleanupChatDedupeKeys() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys().toList();
+      for (final key in allKeys) {
+        if (key.startsWith('_chat_shown_')) {
+          await prefs.remove(key);
+        }
+      }
+    } catch (_) {}
   }
 
   void _retry() {

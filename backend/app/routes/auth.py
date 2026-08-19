@@ -36,7 +36,7 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(credentials.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = create_access_token({"sub": user.email})
+    token = create_access_token({"sub": user.email, "user_id": user.id})
     return Token(access_token=token, user=UserOut.model_validate(user))
 
 

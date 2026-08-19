@@ -143,12 +143,16 @@ async def send_push_notification(
     title: str,
     body: str,
     data: Optional[dict] = None,
+    collapse_key: Optional[str] = None,
+    ttl_seconds: int = 3600,
 ) -> None:
     """
     Send push notification to one or more FCM tokens using DATA-ONLY message.
     Uses the FCM HTTP v1 API (OAuth2 authenticated).
     
-    Strategy: DATA-ONLY message (no top-level 'notification' key).
+    Strategy (inspired by Tinode chat's FCM implementation):
+    ─────────────────────────────────────────────────────────
+    DATA-ONLY message (no top-level 'notification' key).
     
     WHY data-only instead of notification+data hybrid:
     - With notification+data hybrid, Android system auto-shows a basic notification
@@ -157,7 +161,14 @@ async def send_push_notification(
     - With data-only messages, the Flutter background handler is ALWAYS called
       (foreground, background, killed) and WE control the notification display.
     - android.priority=HIGH ensures FCM wakes the device even in Doze mode.
-    - ttl=0s means deliver immediately or discard (no stale notifications).
+    
+    Key reliability settings (fixes from Tinode approach):
+    - ttl: Set to 3600s (1 hour) for chat, 7200s for reminders. Previously 0s which
+      caused messages to be DISCARDED when device was in Doze/app killed. With a
+      proper TTL, FCM queues the message and delivers when the device wakes.
+    - collapse_key: Groups messages per-topic so FCM doesn't rate-limit rapid messages.
+      Without this, FCM may throttle after ~20 messages/minute to the same device.
+    - direct_boot_ok: Allows delivery before device is unlocked after reboot.
     
     On aggressive OEM phones (Xiaomi, Samsung, Oppo, Vivo):
     - Battery optimization exemption + high priority FCM should deliver.
@@ -186,9 +197,25 @@ async def send_push_notification(
     # Add timestamp so client can detect stale messages
     str_data["sent_at"] = str(int(datetime.datetime.utcnow().timestamp()))
 
+    # Android config — high priority wakes device from Doze for immediate delivery.
+    # TTL ensures FCM queues the message if device is temporarily unreachable
+    # (previously 0s = discard immediately if can't deliver, which is why
+    #  killed-state notifications were lost).
+    android_config = {
+        "priority": "high",
+        "ttl": f"{ttl_seconds}s",
+        "direct_boot_ok": True,
+    }
+    # collapse_key prevents FCM rate-limiting when many messages are sent rapidly
+    # to the same device. FCM collapses messages with the same key, keeping only
+    # the latest. For chat, we use the group_id so rapid messages in one group
+    # don't flood the queue but each group gets through.
+    if collapse_key:
+        android_config["collapse_key"] = collapse_key
+
     invalid_tokens = []
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         for token in tokens:
             # DATA-ONLY message: no top-level 'notification' key.
             # This ensures Flutter background handler ALWAYS fires and we control
@@ -197,11 +224,7 @@ async def send_push_notification(
                 "message": {
                     "token": token,
                     "data": str_data,
-                    "android": {
-                        "priority": "high",
-                        "ttl": "0s",
-                        "direct_boot_ok": True,
-                    },
+                    "android": android_config,
                 }
             }
 
@@ -258,6 +281,85 @@ async def _cleanup_invalid_tokens(tokens: List[str]) -> None:
         logger.error(f"Failed to cleanup tokens: {e}")
 
 
+async def send_topic_notification(
+    topic: str,
+    title: str,
+    body: str,
+    data: Optional[dict] = None,
+    ttl_seconds: int = 3600,
+) -> None:
+    """
+    Send a push notification to an FCM topic (all devices subscribed to it).
+    
+    This is the secondary delivery path inspired by Tinode's approach:
+    - Primary: send to individual device tokens (fast, direct)
+    - Secondary: send to topic (reliable, FCM manages delivery internally)
+    
+    FCM topics guarantee delivery to ALL subscribed devices, even those that
+    were offline when the message was sent (up to TTL). This covers the case
+    where a device's individual token push was lost but the device later
+    reconnects and receives the topic message.
+    
+    NOTE: Topic messages are received by ALL devices subscribed to the topic,
+    including the sender's device. The client-side code must handle deduplication
+    (skip showing notification for own messages).
+    """
+    access_token = _get_access_token()
+    if not access_token:
+        return
+
+    _, project_id = _load_credentials()
+    if not project_id:
+        return
+
+    url = FCM_V1_URL.format(project_id=project_id)
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    # Build data payload
+    str_data = {k: str(v) for k, v in (data or {}).items()}
+    str_data["title"] = title
+    str_data["body"] = body
+    str_data["sent_at"] = str(int(datetime.datetime.utcnow().timestamp()))
+
+    message = {
+        "message": {
+            "topic": topic,
+            "data": str_data,
+            "android": {
+                "priority": "high",
+                "ttl": f"{ttl_seconds}s",
+                "direct_boot_ok": True,
+            },
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=message, headers=headers)
+            if resp.status_code == 200:
+                logger.info(f"[FCM Topic] Sent to topic '{topic}'")
+            elif resp.status_code == 401:
+                global _access_token, _token_expiry
+                _access_token = None
+                _token_expiry = None
+                new_token = _get_access_token()
+                if new_token:
+                    headers["Authorization"] = f"Bearer {new_token}"
+                    retry_resp = await client.post(url, json=message, headers=headers)
+                    if retry_resp.status_code == 200:
+                        logger.info(f"[FCM Topic] Sent (refreshed) to topic '{topic}'")
+                    else:
+                        logger.error(f"[FCM Topic] Retry error: {retry_resp.status_code}")
+            else:
+                logger.error(f"[FCM Topic] Error ({resp.status_code}): {resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"[FCM Topic] Send error for topic '{topic}': {e}")
+
+
 # ═══════════════════════════════════════════════════════════════
 # High-level notification helpers
 # ═══════════════════════════════════════════════════════════════
@@ -272,7 +374,13 @@ async def notify_new_chat_message(
     db: AsyncSession,
     group_id: int = 0,
 ) -> None:
-    """Send push notification for new chat messages to all group members except sender."""
+    """Send push notification for new chat messages to all group members except sender.
+    
+    Uses collapse_key per group so rapid messages don't get rate-limited by FCM.
+    TTL of 3600s (1 hour) ensures messages are queued and delivered even if the
+    device is in Doze mode or the app is killed — FCM will hold the message and
+    deliver it when the device next connects (up to 1 hour).
+    """
     target_ids = [uid for uid in recipient_user_ids if uid != sender_id]
     if not target_ids:
         logger.debug(f"[Chat Push] No offline targets for group '{group_name}' (sender={sender_id})")
@@ -299,8 +407,28 @@ async def notify_new_chat_message(
         tokens=tokens,
         title=f"{sender_name} in {group_name}",
         body=body_text,
-        data={"type": "chat", "group_name": group_name, "group_id": str(group_id)},
+        data={"type": "chat", "group_name": group_name, "group_id": str(group_id), "sender_id": str(sender_id)},
+        # collapse_key groups by chat group — prevents FCM rate-limiting
+        # when many messages are sent rapidly in one group
+        collapse_key=f"chat_group_{group_id}",
+        # 1 hour TTL — message survives Doze mode and app-killed state
+        ttl_seconds=3600,
     )
+
+    # Also send to group topic as secondary delivery path (Tinode approach).
+    # Topic messages are received by ALL subscribed devices including the sender,
+    # but the Flutter client filters out own messages using sender_id.
+    if group_id:
+        try:
+            await send_topic_notification(
+                topic=f"chat_group_{group_id}",
+                title=f"{sender_name} in {group_name}",
+                body=body_text,
+                data={"type": "chat", "group_name": group_name, "group_id": str(group_id), "sender_id": str(sender_id)},
+                ttl_seconds=3600,
+            )
+        except Exception as e:
+            logger.debug(f"[Chat Push] Topic send failed (non-critical): {e}")
 
 
 async def notify_reminder_created(
@@ -311,7 +439,11 @@ async def notify_reminder_created(
     target_user_ids: List[int],
     db: AsyncSession,
 ) -> None:
-    """Send push notification when a new reminder is created."""
+    """Send push notification when a new reminder is created.
+    
+    Uses a longer TTL (7200s = 2 hours) since reminder creation is a one-time
+    event that users should always see, even if their device is temporarily offline.
+    """
     if not target_user_ids:
         return
 
@@ -327,6 +459,8 @@ async def notify_reminder_created(
         title=f"\U0001f514 New Reminder from {creator_name}",
         body=f"{reminder_name} \u2014 {remind_date} at {remind_time}",
         data={"type": "reminder", "title": reminder_name},
+        collapse_key="reminder_created",
+        ttl_seconds=7200,  # 2 hours — user should always see reminder creation
     )
 
 
@@ -336,7 +470,13 @@ async def notify_reminder_due(
     target_user_ids: List[int],
     db: AsyncSession,
 ) -> None:
-    """Send push notification when a reminder is due (2 min before or at deadline)."""
+    """Send push notification when a reminder is due (2 min before or at deadline).
+    
+    Uses NO collapse_key so each reminder alert is delivered individually.
+    TTL of 600s (10 minutes) — reminder alerts are time-sensitive; no point
+    delivering them hours after they were due. Short TTL ensures the device
+    gets it soon or the alarm backup handles it.
+    """
     if not target_user_ids:
         return
 
@@ -352,4 +492,8 @@ async def notify_reminder_due(
         title="\u26a1 Reminder Alert!",
         body=f"{reminder_name} (set by {creator_name}) is due NOW!",
         data={"type": "reminder_alert", "title": reminder_name},
+        # No collapse_key — each reminder alert should be delivered individually
+        collapse_key=None,
+        # 10 minutes — reminder alerts are time-sensitive
+        ttl_seconds=600,
     )
