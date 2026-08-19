@@ -57,6 +57,12 @@ jobs:
               <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.VIBRATE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+              <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+              <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
               <application
                   android:label="Sahjanand"
                   android:name="${applicationName}"
@@ -71,7 +77,9 @@ jobs:
                       android:theme="@style/LaunchTheme"
                       android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
                       android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
+                      android:windowSoftInputMode="adjustResize"
+                      android:showWhenLocked="true"
+                      android:turnScreenOn="true">
                       <meta-data
                           android:name="io.flutter.embedding.android.NormalTheme"
                           android:resource="@style/NormalTheme" />
@@ -80,6 +88,22 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
+                  <service
+                      android:name="com.google.firebase.messaging.FirebaseMessagingService"
+                      android:exported="false"
+                      android:stopWithTask="false">
+                      <intent-filter>
+                          <action android:name="com.google.firebase.MESSAGING_EVENT" />
+                      </intent-filter>
+                  </service>
+                  <receiver
+                      android:name="com.google.firebase.iid.FirebaseInstanceIdReceiver"
+                      android:exported="true"
+                      android:permission="com.google.android.c2dm.permission.SEND">
+                      <intent-filter>
+                          <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+                      </intent-filter>
+                  </receiver>
                   <meta-data
                       android:name="flutterEmbedding"
                       android:value="2" />
@@ -89,6 +113,9 @@ jobs:
                   <meta-data
                       android:name="com.google.firebase.messaging.default_notification_icon"
                       android:resource="@mipmap/ic_launcher" />
+                  <meta-data
+                      android:name="firebase_messaging_auto_init_enabled"
+                      android:value="true" />
               </application>
               <queries>
                   <intent>
@@ -206,6 +233,11 @@ jobs:
           cp assets/icon.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           cp assets/icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          
+          # ── Notification sounds ──
+          mkdir -p android/app/src/main/res/raw
+          cp assets/alarm_tone.wav android/app/src/main/res/raw/alarm_tone.wav
+          cp assets/chat_tone.wav android/app/src/main/res/raw/chat_tone.wav
           
           rm -f pubspec.lock
           flutter pub get
