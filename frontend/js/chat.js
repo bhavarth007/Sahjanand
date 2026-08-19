@@ -152,6 +152,11 @@ async function selectGroup(gid) {
   toggleInputBar();
   connectWs(token, gid);
 
+  // Mark all messages as seen (triggers blue tick for senders) — fire and forget
+  fetch(`${CHAT_API}/api/chat/groups/${gid}/seen`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }
+  }).catch(() => {});
+
   // Hide group info if open
   if (els.groupInfoPanel) els.groupInfoPanel.style.display = 'none';
 
@@ -210,6 +215,27 @@ function buildBubble(msg) {
   }
 
   const deleteBtn = (mine || currentIsAdmin) ? `<button class="msg-delete-btn" onclick="deleteMessage(${msg.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
+
+  // WhatsApp-style tick marks (only for sender's own messages)
+  let tickHtml = '';
+  if (mine) {
+    const seen = msg.seen_count || 0;
+    const total = msg.member_count || 0;
+    if (total === 0) {
+      // Single tick: sent (no other members yet)
+      tickHtml = `<span class="msg-tick msg-tick-sent" data-msg-id="${msg.id}" title="Sent">✓</span>`;
+    } else if (seen >= total) {
+      // Double blue tick: all members seen
+      tickHtml = `<span class="msg-tick msg-tick-seen" data-msg-id="${msg.id}" title="Seen by all">✓✓</span>`;
+    } else if (seen > 0) {
+      // Double grey tick: some members seen
+      tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered (${seen}/${total} seen)">✓✓</span>`;
+    } else {
+      // Double grey tick: delivered (message received, nobody has opened chat yet)
+      tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered">✓✓</span>`;
+    }
+  }
+
   const bubbleClass = mediaOnly ? 'chat-bubble chat-bubble-media-only' : 'chat-bubble';
 
   return `${divider}<div class="chat-msg-row ${side}" data-msg-id="${msg.id}">
@@ -217,7 +243,7 @@ function buildBubble(msg) {
     <div class="${bubbleClass}">
       ${mine ? '' : `<div class="chat-bubble-sender">${esc(name)}</div>`}
       ${body}
-      <div class="chat-bubble-footer"><span class="chat-bubble-time">${time}</span>${deleteBtn}</div>
+      <div class="chat-bubble-footer"><span class="chat-bubble-time">${time}</span>${tickHtml}${deleteBtn}</div>
     </div></div>`;
 }
 
@@ -310,10 +336,31 @@ function handleWs(d) {
   switch(d.event) {
     case 'message': appendMsg(d,true); break;
     case 'message_deleted': const el=document.querySelector(`[data-msg-id="${d.id}"]`); if(el) el.remove(); break;
+    case 'message_status': updateMsgTick(d.id, d.seen_count, d.member_count); break;
     case 'typing': showTyping(d); break;
     case 'user_joined': case 'user_left': chatOnline=new Set(d.online||[]); updateOnline(); break;
     case 'member_added': case 'member_removed': loadGroupMembers(localStorage.getItem('sahjanand_token'),currentGroupId); break;
     case 'error': toast(d.detail||'Error','error'); break;
+  }
+}
+
+// Update tick mark on a specific message in real time
+function updateMsgTick(msgId, seenCount, memberCount) {
+  const tickEl = document.querySelector(`.msg-tick[data-msg-id="${msgId}"]`);
+  if (!tickEl) return;
+  tickEl.className = 'msg-tick';
+  if (!memberCount || memberCount === 0) {
+    tickEl.className += ' msg-tick-sent';
+    tickEl.textContent = '✓';
+    tickEl.title = 'Sent';
+  } else if (seenCount >= memberCount) {
+    tickEl.className += ' msg-tick-seen';
+    tickEl.textContent = '✓✓';
+    tickEl.title = 'Seen by all';
+  } else {
+    tickEl.className += ' msg-tick-delivered';
+    tickEl.textContent = '✓✓';
+    tickEl.title = seenCount > 0 ? `Delivered (${seenCount}/${memberCount} seen)` : 'Delivered';
   }
 }
 
@@ -633,7 +680,8 @@ let _latestMsgId = 0;
 
 function startChatPolling() {
   if (chatPollInterval) return;
-  chatPollInterval = setInterval(pollNewMessages, 4000);
+  // 500ms polling for near-real-time message delivery
+  chatPollInterval = setInterval(pollNewMessages, 500);
 }
 
 async function pollNewMessages() {

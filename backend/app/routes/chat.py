@@ -34,7 +34,7 @@ from datetime import datetime
 
 from app.auth import get_current_user
 from app.database import get_db, AsyncSessionLocal
-from app.models.db_models import ChatMessage, User, GroupMember, ChatGroup
+from app.models.db_models import ChatMessage, User, GroupMember, ChatGroup, MessageRead
 from app.config import get_settings
 from app.notifications import notify_new_chat_message
 from jose import JWTError, jwt
@@ -116,6 +116,13 @@ class MessageOut(BaseModel):
     media_url: Optional[str]
     media_name: Optional[str]
     created_at: datetime
+    # Read receipt counts for WhatsApp-style ticks
+    # delivered_count: how many non-sender members have received the message
+    # seen_count: how many non-sender members have explicitly seen it
+    # member_count: total non-sender members in the group
+    delivered_count: int = 0
+    seen_count: int = 0
+    member_count: int = 0
 
 class MemberOut(BaseModel):
     id: int
@@ -395,15 +402,48 @@ async def get_messages(
     else:
         user_map = {}
 
+    # Get member count for this group (for tick logic)
+    mq = await db.execute(select(GroupMember.user_id).where(GroupMember.group_id == gid))
+    all_member_ids = [r[0] for r in mq.all()]
+    member_count = len(all_member_ids)
+
+    # Bulk fetch read receipts for all messages
+    msg_ids = [m.id for m in msgs]
+    reads_map: dict[int, int] = {}  # message_id → seen count
+    if msg_ids:
+        rq = await db.execute(
+            select(MessageRead.message_id).where(MessageRead.message_id.in_(msg_ids))
+        )
+        for row in rq.all():
+            reads_map[row[0]] = reads_map.get(row[0], 0) + 1
+
+    # Mark messages as seen by current user (they're loading the chat)
+    for m in msgs:
+        if m.sender_id != current_user.id:
+            existing = await db.execute(
+                select(MessageRead).where(
+                    MessageRead.message_id == m.id,
+                    MessageRead.user_id == current_user.id
+                )
+            )
+            if not existing.scalar_one_or_none():
+                db.add(MessageRead(message_id=m.id, user_id=current_user.id))
+    await db.flush()
+
     out = []
     for m in reversed(msgs):
         s = user_map.get(m.sender_id)
+        seen = reads_map.get(m.id, 0)
+        non_sender_count = max(0, member_count - 1)
         out.append(MessageOut(
             id=m.id, group_id=m.group_id, sender_id=m.sender_id,
             sender_name=(s.full_name or s.email) if s else "Unknown",
             msg_type=m.msg_type, content=m.content,
             media_url=m.media_url, media_name=m.media_name,
             created_at=m.created_at,
+            delivered_count=seen,
+            seen_count=seen,
+            member_count=non_sender_count,
         ))
     return out
 
@@ -503,7 +543,104 @@ async def delete_message(
 
 
 # ═══════════════════════════════════════════════════════════════
-# Upload media
+# Mark message(s) as seen — WhatsApp-style blue ticks
+# ═══════════════════════════════════════════════════════════════
+@router.post("/messages/{mid}/seen")
+async def mark_message_seen(
+    mid: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a message as seen by the current user. Broadcasts tick update to the group."""
+    result = await db.execute(select(ChatMessage).where(ChatMessage.id == mid))
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(404, "Message not found.")
+    # Don't record sender reading their own message
+    if msg.sender_id == current_user.id:
+        return {"ok": True}
+    # Upsert read record
+    existing = await db.execute(
+        select(MessageRead).where(
+            MessageRead.message_id == mid,
+            MessageRead.user_id == current_user.id
+        )
+    )
+    if not existing.scalar_one_or_none():
+        db.add(MessageRead(message_id=mid, user_id=current_user.id))
+        await db.flush()
+    # Count current reads
+    count_q = await db.execute(
+        select(MessageRead).where(MessageRead.message_id == mid)
+    )
+    seen_count = len(count_q.scalars().all())
+    # Get non-sender member count for this group
+    mq = await db.execute(
+        select(GroupMember.user_id).where(GroupMember.group_id == msg.group_id)
+    )
+    member_count = max(0, len(mq.all()) - 1)
+    # Broadcast tick update so sender sees live tick change
+    await manager.broadcast(msg.group_id, {
+        "event": "message_status",
+        "id": mid,
+        "seen_count": seen_count,
+        "member_count": member_count,
+    })
+    return {"ok": True, "seen_count": seen_count, "member_count": member_count}
+
+
+@router.post("/groups/{gid}/seen")
+async def mark_group_messages_seen(
+    gid: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark all recent unread messages in a group as seen (called when user opens a group)."""
+    await require_member(current_user, gid, db)
+    # Get last 100 messages in this group
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.group_id == gid, ChatMessage.sender_id != current_user.id)
+        .order_by(ChatMessage.id.desc())
+        .limit(100)
+    )
+    msgs = result.scalars().all()
+    if not msgs:
+        return {"ok": True}
+    msg_ids = [m.id for m in msgs]
+    # Find which ones are already read
+    rq = await db.execute(
+        select(MessageRead.message_id).where(
+            MessageRead.message_id.in_(msg_ids),
+            MessageRead.user_id == current_user.id
+        )
+    )
+    already_read = {r[0] for r in rq.all()}
+    new_reads = [mid for mid in msg_ids if mid not in already_read]
+    for mid in new_reads:
+        db.add(MessageRead(message_id=mid, user_id=current_user.id))
+    if new_reads:
+        await db.flush()
+        # Get member count once
+        mq = await db.execute(
+            select(GroupMember.user_id).where(GroupMember.group_id == gid)
+        )
+        member_count = max(0, len(mq.all()) - 1)
+        # Broadcast status for all newly read messages
+        rq2 = await db.execute(
+            select(MessageRead.message_id).where(MessageRead.message_id.in_(msg_ids))
+        )
+        seen_counts: dict[int, int] = {}
+        for row in rq2.all():
+            seen_counts[row[0]] = seen_counts.get(row[0], 0) + 1
+        for mid in new_reads:
+            await manager.broadcast(gid, {
+                "event": "message_status",
+                "id": mid,
+                "seen_count": seen_counts.get(mid, 1),
+                "member_count": member_count,
+            })
+    return {"ok": True, "marked": len(new_reads)}
 # ═══════════════════════════════════════════════════════════════
 @router.post("/upload")
 async def upload_media(

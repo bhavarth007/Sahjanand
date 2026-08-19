@@ -147,32 +147,32 @@ async def send_push_notification(
     ttl_seconds: int = 3600,
 ) -> None:
     """
-    Send push notification to one or more FCM tokens using DATA-ONLY message.
+    Send push notification using NOTIFICATION+DATA hybrid message.
     Uses the FCM HTTP v1 API (OAuth2 authenticated).
     
-    Strategy (inspired by Tinode chat's FCM implementation):
-    ─────────────────────────────────────────────────────────
-    DATA-ONLY message (no top-level 'notification' key).
+    Strategy: NOTIFICATION + DATA hybrid (Telegram/WhatsApp approach)
+    ─────────────────────────────────────────────────────────────────
+    WHY hybrid instead of data-only:
+    - Data-only messages require the Flutter background isolate to wake up
+      and show a notification. On aggressive OEM phones (Xiaomi, Samsung, 
+      Oppo, Vivo, Realme), the OS kills the app process completely and the
+      background isolate NEVER starts → notification is silently lost.
+    - With notification+data hybrid, Android OS ITSELF shows the notification
+      from the 'notification' field even when the app is completely dead.
+      The app doesn't need to be running at all.
+    - When the app IS in foreground, we suppress the system notification
+      (via setForegroundNotificationPresentationOptions) and show our own
+      custom rich notification instead.
     
-    WHY data-only instead of notification+data hybrid:
-    - With notification+data hybrid, Android system auto-shows a basic notification
-      when the app is in background/killed. Then our Flutter background handler ALSO
-      fires and shows a second (custom) notification → DUPLICATE notifications.
-    - With data-only messages, the Flutter background handler is ALWAYS called
-      (foreground, background, killed) and WE control the notification display.
-    - android.priority=HIGH ensures FCM wakes the device even in Doze mode.
+    Behavior by app state:
+    - FOREGROUND: onMessage fires → we show custom notification (system suppressed)
+    - BACKGROUND: System shows notification from 'notification' field + 
+      onBackgroundMessage fires (we skip showing to avoid duplicates)
+    - KILLED: System shows notification from 'notification' field.
+      App doesn't need to wake up at all.
     
-    Key reliability settings (fixes from Tinode approach):
-    - ttl: Set to 3600s (1 hour) for chat, 7200s for reminders. Previously 0s which
-      caused messages to be DISCARDED when device was in Doze/app killed. With a
-      proper TTL, FCM queues the message and delivers when the device wakes.
-    - collapse_key: Groups messages per-topic so FCM doesn't rate-limit rapid messages.
-      Without this, FCM may throttle after ~20 messages/minute to the same device.
-    - direct_boot_ok: Allows delivery before device is unlocked after reboot.
-    
-    On aggressive OEM phones (Xiaomi, Samsung, Oppo, Vivo):
-    - Battery optimization exemption + high priority FCM should deliver.
-    - The Flutter app also schedules local alarms as backup for reminders.
+    This matches how Telegram works: notifications arrive even when app is
+    force-stopped, because the OS handles display directly from FCM payload.
     """
     access_token = _get_access_token()
     if not access_token:
@@ -197,19 +197,29 @@ async def send_push_notification(
     # Add timestamp so client can detect stale messages
     str_data["sent_at"] = str(int(datetime.datetime.utcnow().timestamp()))
 
-    # Android config — high priority wakes device from Doze for immediate delivery.
-    # TTL ensures FCM queues the message if device is temporarily unreachable
-    # (previously 0s = discard immediately if can't deliver, which is why
-    #  killed-state notifications were lost).
+    # Determine notification channel based on type
+    notif_type = (data or {}).get("type", "")
+    if notif_type in ("reminder_alert", "reminder"):
+        channel_id = "sahjanand_reminders"
+        sound = "alarm_tone"
+    else:
+        channel_id = "sahjanand_chat"
+        sound = "chat_tone"
+
+    # Android config — high priority wakes device from Doze
     android_config = {
         "priority": "high",
         "ttl": f"{ttl_seconds}s",
         "direct_boot_ok": True,
+        "notification": {
+            "channel_id": channel_id,
+            "sound": sound,
+            "notification_priority": "PRIORITY_MAX",
+            "visibility": "PUBLIC",
+            "default_vibrate_timings": False,
+            "default_sound": False,
+        },
     }
-    # collapse_key prevents FCM rate-limiting when many messages are sent rapidly
-    # to the same device. FCM collapses messages with the same key, keeping only
-    # the latest. For chat, we use the group_id so rapid messages in one group
-    # don't flood the queue but each group gets through.
     if collapse_key:
         android_config["collapse_key"] = collapse_key
 
@@ -217,12 +227,17 @@ async def send_push_notification(
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         for token in tokens:
-            # DATA-ONLY message: no top-level 'notification' key.
-            # This ensures Flutter background handler ALWAYS fires and we control
-            # notification display (no duplicates from system auto-showing).
+            # NOTIFICATION+DATA hybrid message:
+            # - 'notification' field: shown by Android OS when app is background/killed
+            # - 'data' field: available to the Flutter handler when app is alive
+            # The Flutter foreground handler suppresses system notification and shows custom one.
             message = {
                 "message": {
                     "token": token,
+                    "notification": {
+                        "title": title,
+                        "body": body,
+                    },
                     "data": str_data,
                     "android": android_config,
                 }
@@ -415,20 +430,10 @@ async def notify_new_chat_message(
         ttl_seconds=3600,
     )
 
-    # Also send to group topic as secondary delivery path (Tinode approach).
-    # Topic messages are received by ALL subscribed devices including the sender,
-    # but the Flutter client filters out own messages using sender_id.
-    if group_id:
-        try:
-            await send_topic_notification(
-                topic=f"chat_group_{group_id}",
-                title=f"{sender_name} in {group_name}",
-                body=body_text,
-                data={"type": "chat", "group_name": group_name, "group_id": str(group_id), "sender_id": str(sender_id)},
-                ttl_seconds=3600,
-            )
-        except Exception as e:
-            logger.debug(f"[Chat Push] Topic send failed (non-critical): {e}")
+    # NOTE: Topic notification removed — with hybrid notification+data approach,
+    # individual token messages are now reliably delivered by the OS even when app
+    # is killed. Topic messages would cause duplicates (both topic AND token arrive).
+    # The individual push is sufficient and more reliable.
 
 
 async def notify_reminder_created(

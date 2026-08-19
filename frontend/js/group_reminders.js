@@ -161,9 +161,12 @@ async function loadReminderUsers() {
     const res = await fetch(`${R_API}/api/chat/all-users`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) return;
     const users = await res.json();
-    // Non-admin users cannot select admin in the list
+    // Non-admin users cannot select admin in the list (except themselves)
     const isAdmin = currentUserData.is_admin;
-    const filteredUsers = isAdmin ? users : users.filter(u => !u.is_admin);
+    const currentUserId = currentUserData.id;
+    const filteredUsers = isAdmin
+      ? users
+      : users.filter(u => !u.is_admin || u.id === currentUserId);
 
     container.innerHTML = `
       <div class="multi-select-dropdown" id="reminderToDropdown">

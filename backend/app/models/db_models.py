@@ -208,6 +208,24 @@ class JobCard(Base):
 User.job_cards = relationship("JobCard", back_populates="user", cascade="all, delete-orphan")
 
 
+class MessageRead(Base):
+    """
+    Tracks which users have read which messages — used for WhatsApp-style ticks.
+    - Single grey tick  = message sent (saved to DB)
+    - Double grey tick  = delivered (recipient's device received it via WS/poll)
+    - Double blue tick  = seen (recipient opened the chat and scrolled past it)
+    """
+    __tablename__ = "message_reads"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    message_id = Column(Integer, ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    read_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+    message = relationship("ChatMessage")
+    user    = relationship("User")
+
+
 class FcmToken(Base):
     """
     Stores FCM device tokens for push notifications.

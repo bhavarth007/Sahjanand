@@ -931,6 +931,23 @@
 .chat-msg-row:hover .msg-delete-btn { opacity: 1; }
 .msg-delete-btn:hover { color: #c0392b; }
 
+/* ── WhatsApp-style message tick marks ──────────────────────── */
+.msg-tick {
+  font-size: .78rem;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -.05em;
+  user-select: none;
+  flex-shrink: 0;
+  transition: color .25s;
+}
+/* Single grey tick — sent */
+.msg-tick-sent  { color: #aaa; }
+/* Double grey tick — delivered (received but not opened) */
+.msg-tick-delivered { color: #aaa; }
+/* Double blue tick — seen by all */
+.msg-tick-seen  { color: #53bdeb; }
+
 
 /* ═══════════════════════════════════════════════════════════════
    Group Reminders Panel (below chat — separate section)

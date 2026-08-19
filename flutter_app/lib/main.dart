@@ -51,16 +51,22 @@ const String _prefTokenRegistered = 'fcm_token_registered';
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // CRITICAL: WidgetsFlutterBinding must be initialized FIRST in background isolate.
-  // Without this, plugins (SharedPreferences, local notifications) fail silently
-  // when the app is killed/terminated. This is the #1 reason background notifications
-  // don't show on killed apps.
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await _initLocalNotificationsMinimal();
 
-  // Data-only messages: always show our custom notification
-  // (No duplicate risk since backend sends data-only, no top-level notification)
-  if (message.data.isNotEmpty) {
+  // With NOTIFICATION+DATA hybrid approach:
+  // - When app is in background/killed, the SYSTEM already shows the notification
+  //   from the 'notification' field in the FCM message (like Telegram does).
+  // - We do NOT show a duplicate local notification here.
+  // - This handler is only for background logic (updating state, etc.)
+  //
+  // The system notification is shown automatically by Android OS without needing
+  // our app to be running — this is WHY notifications now work when app is killed.
+  //
+  // Only show our own notification if there's NO system notification
+  // (i.e., the message is data-only, which happens for topic messages)
+  if (message.notification == null && message.data.isNotEmpty) {
+    await _initLocalNotificationsMinimal();
     await _showSmartNotification(message.data);
   }
 }
@@ -654,12 +660,21 @@ class _WebViewScreenState extends State<WebViewScreen>
     _subscribeToGroupTopics();
 
     // ─── FOREGROUND messages ───
-    // Data-only messages always come through onMessage when app is in foreground.
-    // We show our custom local notification + in-app banner.
+    // With notification+data hybrid, when app is in foreground:
+    // - System notification is suppressed (we set alert:false above)
+    // - onMessage fires with both notification and data fields
+    // - We show our custom rich notification with reply action + in-app banner
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      if (message.data.isEmpty) return;
+      if (message.data.isEmpty && message.notification == null) return;
 
+      // Use data fields if available, otherwise extract from notification
       final data = Map<String, dynamic>.from(message.data);
+      if (data['title'] == null && message.notification?.title != null) {
+        data['title'] = message.notification!.title!;
+      }
+      if (data['body'] == null && message.notification?.body != null) {
+        data['body'] = message.notification!.body!;
+      }
 
       // Inject auth token for reply action
       try {
@@ -670,7 +685,7 @@ class _WebViewScreenState extends State<WebViewScreen>
         }
       } catch (_) {}
 
-      // Show system notification (in notification bar) even in foreground
+      // Show our custom notification (system one is suppressed in foreground)
       await _showSmartNotification(data);
 
       // Also show in-app banner
