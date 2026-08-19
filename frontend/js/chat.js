@@ -680,8 +680,9 @@ let _latestMsgId = 0;
 
 function startChatPolling() {
   if (chatPollInterval) return;
-  // 500ms polling for near-real-time message delivery
-  chatPollInterval = setInterval(pollNewMessages, 500);
+  // 1s polling as fallback when WebSocket is disconnected
+  // Primary real-time delivery is via WebSocket (instant)
+  chatPollInterval = setInterval(pollNewMessages, 1000);
 }
 
 async function pollNewMessages() {

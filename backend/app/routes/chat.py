@@ -480,6 +480,9 @@ async def post_message(
     await db.refresh(msg)
 
     # Broadcast via WebSocket to all connected users
+    # Include member_count so receivers can render ticks immediately
+    _mq = await db.execute(select(GroupMember.user_id).where(GroupMember.group_id == gid))
+    _member_count = max(0, len(_mq.all()) - 1)
     await manager.broadcast(gid, {
         "event": "message", "id": msg.id, "group_id": gid,
         "sender_id": current_user.id,
@@ -487,6 +490,7 @@ async def post_message(
         "msg_type": body.msg_type, "content": content,
         "media_url": body.media_url, "media_name": body.media_name,
         "created_at": msg.created_at.isoformat(),
+        "seen_count": 0, "member_count": _member_count,
     })
 
     # Send push notification to offline group members
@@ -519,6 +523,7 @@ async def post_message(
         msg_type=msg.msg_type, content=msg.content,
         media_url=msg.media_url, media_name=msg.media_name,
         created_at=msg.created_at,
+        seen_count=0, member_count=_member_count,
     )
 
 
@@ -764,6 +769,7 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                     "msg_type": msg_type, "content": content or None,
                     "media_url": media_url, "media_name": media_name,
                     "created_at": msg.created_at.isoformat(),
+                    "seen_count": 0, "member_count": max(0, len(manager.online_in_group(group_id)) - 1),
                 })
 
             elif event == "typing":
