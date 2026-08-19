@@ -208,6 +208,33 @@ class JobCard(Base):
 User.job_cards = relationship("JobCard", back_populates="user", cascade="all, delete-orphan")
 
 
+class MessageDelivery(Base):
+    """
+    Tracks which users' devices have RECEIVED a message (delivery acknowledgement).
+    This is the "double grey tick" state — the message reached the receiver's device
+    but has NOT been opened/read yet.
+    
+    Flow:
+    1. Message saved to DB → SENT (single grey tick ✓)
+    2. Receiver's device receives message (via WS/FCM/poll) and sends ACK
+       → row inserted here → DELIVERED (double grey tick ✓✓)
+    3. Receiver opens the chat and views the message
+       → MessageRead row inserted → READ (double blue tick ✓✓)
+    
+    A message status can NEVER go backward: SENT → DELIVERED → READ
+    Idempotent: duplicate ACKs are silently ignored (unique constraint).
+    """
+    __tablename__ = "message_deliveries"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    message_id   = Column(Integer, ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id      = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    delivered_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    message = relationship("ChatMessage")
+    user    = relationship("User")
+
+
 class MessageRead(Base):
     """
     Tracks which users have read which messages — used for WhatsApp-style ticks.

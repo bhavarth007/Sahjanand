@@ -388,8 +388,12 @@ async def notify_new_chat_message(
     sender_id: int,
     db: AsyncSession,
     group_id: int = 0,
+    message_id: int = 0,
 ) -> None:
     """Send push notification for new chat messages to all group members except sender.
+    
+    Includes message_id in data payload so the receiving client can send a delivery
+    acknowledgement back to the server (triggering the double-grey tick for the sender).
     
     Uses collapse_key per group so rapid messages don't get rate-limited by FCM.
     TTL of 3600s (1 hour) ensures messages are queued and delivered even if the
@@ -422,7 +426,13 @@ async def notify_new_chat_message(
         tokens=tokens,
         title=f"{sender_name} in {group_name}",
         body=body_text,
-        data={"type": "chat", "group_name": group_name, "group_id": str(group_id), "sender_id": str(sender_id)},
+        data={
+            "type": "chat",
+            "group_name": group_name,
+            "group_id": str(group_id),
+            "sender_id": str(sender_id),
+            "message_id": str(message_id),  # For delivery ACK
+        },
         # collapse_key groups by chat group — prevents FCM rate-limiting
         # when many messages are sent rapidly in one group
         collapse_key=f"chat_group_{group_id}",

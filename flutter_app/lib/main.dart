@@ -55,25 +55,43 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   await _initLocalNotificationsMinimal();
 
-  // ALWAYS show our own notification in background handler, regardless of whether
-  // the system also showed one. We use a deterministic notification ID based on
-  // the message data — if the system already showed a notification, ours replaces
-  // it (same channel, similar content). If the system notification was suppressed
-  // by aggressive OEM battery optimization (Xiaomi, Samsung, Oppo, Vivo), then
-  // OUR notification will be the one that shows.
-  //
-  // This "belt AND suspenders" approach ensures notifications ALWAYS appear:
-  // - Stock Android: System shows from 'notification' field → ours updates/replaces it
-  // - OEM phones that suppress: System fails silently → ours is the only one shown
+  // Show notification
   if (message.data.isNotEmpty) {
     await _showSmartNotification(message.data);
+    // Send delivery ACK to server — this triggers the double-grey tick for sender
+    await _sendDeliveryAck(message.data);
   } else if (message.notification != null) {
-    // Fallback: if only notification field (no data), still show
     await _showSmartNotification({
       'title': message.notification!.title ?? 'Sahjanand',
       'body': message.notification!.body ?? '',
       'type': 'chat',
     });
+  }
+}
+
+/// Send delivery acknowledgement to the server (message received on device).
+/// This is called both from background handler and foreground handler.
+/// It tells the server "this device got the message" → triggers double-grey tick.
+Future<void> _sendDeliveryAck(Map<String, dynamic> data) async {
+  final messageId = data['message_id']?.toString() ?? '';
+  final type = data['type']?.toString() ?? '';
+  if (messageId.isEmpty || type != 'chat') return;
+
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final authToken = prefs.getString(_prefAuthToken) ?? '';
+    if (authToken.isEmpty) return;
+
+    await http.post(
+      Uri.parse('$kProductionUrl/api/chat/messages/deliver'),
+      headers: {
+        'Authorization': 'Bearer $authToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'message_ids': [int.parse(messageId)]}),
+    ).timeout(const Duration(seconds: 10));
+  } catch (_) {
+    // Silently fail — delivery ACK is best-effort
   }
 }
 
@@ -226,6 +244,10 @@ void _onNotificationResponse(NotificationResponse response) {
     if (response.actionId == _replyActionId && response.input != null) {
       _sendReplyFromNotification(response.input!, response.payload);
     }
+  } else if (response.notificationResponseType ==
+      NotificationResponseType.selectedNotification) {
+    // User tapped the notification body → store group_id for navigation
+    _storeNotificationTapGroupId(response.payload);
   }
 }
 
@@ -234,7 +256,23 @@ void _onNotificationResponse(NotificationResponse response) {
 void _onBackgroundNotificationResponse(NotificationResponse response) {
   if (response.actionId == _replyActionId && response.input != null) {
     _sendReplyFromNotification(response.input!, response.payload);
+  } else if (response.notificationResponseType ==
+      NotificationResponseType.selectedNotification) {
+    _storeNotificationTapGroupId(response.payload);
   }
+}
+
+/// Store the group_id from notification tap for navigation on app resume
+Future<void> _storeNotificationTapGroupId(String? payload) async {
+  if (payload == null || payload.isEmpty) return;
+  try {
+    final data = jsonDecode(payload);
+    final groupId = data['group_id']?.toString() ?? '';
+    if (groupId.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('_pending_nav_group_id', groupId);
+    }
+  } catch (_) {}
 }
 
 /// Send reply directly to backend from notification action
@@ -696,6 +734,9 @@ class _WebViewScreenState extends State<WebViewScreen>
         }
       } catch (_) {}
 
+      // Send delivery ACK (message received on this device)
+      _sendDeliveryAck(data);
+
       // Show our custom notification (system one is suppressed in foreground)
       await _showSmartNotification(data);
 
@@ -709,15 +750,35 @@ class _WebViewScreenState extends State<WebViewScreen>
 
     // ─── Notification tap (app was in background) ───
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      _controller.runJavaScript(
-          'if(typeof refreshChatMessages==="function")refreshChatMessages();');
+      _handleNotificationTap(message.data);
     });
 
     // ─── Handle initial message (app was terminated, user tapped notification) ───
     final initialMessage = await messaging.getInitialMessage();
     if (initialMessage != null) {
       // App was opened from a terminated state by tapping notification
-      // Will be handled after webview loads
+      // Store the group_id to navigate after webview loads
+      final groupId = initialMessage.data['group_id']?.toString() ?? '';
+      if (groupId.isNotEmpty) {
+        _pendingNavigationGroupId = groupId;
+      }
+    }
+  }
+
+  /// Pending group navigation from terminated-state notification tap
+  String? _pendingNavigationGroupId;
+
+  /// Handle notification tap — navigate to the correct group in the webview
+  void _handleNotificationTap(Map<String, dynamic> data) {
+    final groupId = data['group_id']?.toString() ?? '';
+    if (groupId.isNotEmpty) {
+      _controller.runJavaScript(
+        'if(typeof selectGroup==="function")selectGroup($groupId);'
+        'else if(typeof refreshChatMessages==="function")refreshChatMessages();'
+      );
+    } else {
+      _controller.runJavaScript(
+        'if(typeof refreshChatMessages==="function")refreshChatMessages();');
     }
   }
 
@@ -873,6 +934,8 @@ class _WebViewScreenState extends State<WebViewScreen>
           _injectBridge();
           // After page load, try to save the auth token
           _saveAuthTokenFromWebview();
+          // Handle pending notification tap (app was terminated, user tapped notif)
+          _handlePendingNavigation();
         },
         onWebResourceError: (e) {
           if (e.isForMainFrame ?? true) {
@@ -894,6 +957,32 @@ class _WebViewScreenState extends State<WebViewScreen>
       final ac = _controller.platform as AndroidWebViewController;
       ac.setMediaPlaybackRequiresUserGesture(false);
       ac.setOnPlatformPermissionRequest((r) => r.grant());
+    }
+  }
+
+  /// Handle pending navigation from terminated-state notification tap
+  void _handlePendingNavigation() async {
+    String? gid = _pendingNavigationGroupId;
+    _pendingNavigationGroupId = null;
+
+    // Also check SharedPreferences (set by background notification tap handler)
+    if (gid == null || gid.isEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        gid = prefs.getString('_pending_nav_group_id');
+        if (gid != null && gid.isNotEmpty) {
+          await prefs.remove('_pending_nav_group_id');
+        }
+      } catch (_) {}
+    }
+
+    if (gid != null && gid.isNotEmpty) {
+      // Wait for page JS to initialize, then navigate to the group
+      Future.delayed(const Duration(seconds: 3), () {
+        _controller.runJavaScript(
+          'if(typeof selectGroup==="function")selectGroup($gid);'
+        );
+      });
     }
   }
 
@@ -1349,6 +1438,8 @@ class _WebViewScreenState extends State<WebViewScreen>
           'if(typeof refreshChatMessages==="function")refreshChatMessages();');
       // Re-save auth token when app resumes (user might have logged in/out)
       _saveAuthTokenFromWebview();
+      // Check if user tapped a notification while app was backgrounded
+      _handlePendingNavigation();
       // Cleanup stale chat dedup keys on resume
       _cleanupChatDedupeKeys();
     }

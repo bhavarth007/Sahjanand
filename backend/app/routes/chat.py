@@ -34,7 +34,7 @@ from datetime import datetime
 
 from app.auth import get_current_user
 from app.database import get_db, AsyncSessionLocal
-from app.models.db_models import ChatMessage, User, GroupMember, ChatGroup, MessageRead
+from app.models.db_models import ChatMessage, User, GroupMember, ChatGroup, MessageRead, MessageDelivery
 from app.config import get_settings
 from app.notifications import notify_new_chat_message
 from jose import JWTError, jwt
@@ -116,10 +116,14 @@ class MessageOut(BaseModel):
     media_url: Optional[str]
     media_name: Optional[str]
     created_at: datetime
-    # Read receipt counts for WhatsApp-style ticks
-    # delivered_count: how many non-sender members have received the message
-    # seen_count: how many non-sender members have explicitly seen it
+    # WhatsApp-style tick status fields:
+    # delivered_count: how many non-sender members' devices have received the message
+    # seen_count: how many non-sender members have actually opened and viewed the message
     # member_count: total non-sender members in the group
+    # Tick logic: 
+    #   delivered_count==0 AND seen_count==0 → ✓ (sent, single tick)
+    #   delivered_count>0 but seen_count < member_count → ✓✓ grey (delivered)
+    #   seen_count >= member_count → ✓✓ blue (all read)
     delivered_count: int = 0
     seen_count: int = 0
     member_count: int = 0
@@ -402,47 +406,39 @@ async def get_messages(
     else:
         user_map = {}
 
-    # Get member count for this group (for tick logic)
+    # Get total member count for this group (for tick logic)
     mq = await db.execute(select(GroupMember.user_id).where(GroupMember.group_id == gid))
     all_member_ids = [r[0] for r in mq.all()]
-    member_count = len(all_member_ids)
+    total_members = len(all_member_ids)
 
-    # Bulk fetch read receipts for all messages
+    # Bulk fetch delivery + read counts for all messages
     msg_ids = [m.id for m in msgs]
-    reads_map: dict[int, int] = {}  # message_id → seen count
+    delivery_map: dict[int, int] = {}  # message_id → delivery count
+    reads_map: dict[int, int] = {}     # message_id → seen count
     if msg_ids:
+        dq = await db.execute(
+            select(MessageDelivery.message_id).where(MessageDelivery.message_id.in_(msg_ids))
+        )
+        for row in dq.all():
+            delivery_map[row[0]] = delivery_map.get(row[0], 0) + 1
         rq = await db.execute(
             select(MessageRead.message_id).where(MessageRead.message_id.in_(msg_ids))
         )
         for row in rq.all():
             reads_map[row[0]] = reads_map.get(row[0], 0) + 1
 
-    # Mark messages as seen by current user (they're loading the chat)
-    for m in msgs:
-        if m.sender_id != current_user.id:
-            existing = await db.execute(
-                select(MessageRead).where(
-                    MessageRead.message_id == m.id,
-                    MessageRead.user_id == current_user.id
-                )
-            )
-            if not existing.scalar_one_or_none():
-                db.add(MessageRead(message_id=m.id, user_id=current_user.id))
-    await db.flush()
-
     out = []
     for m in reversed(msgs):
         s = user_map.get(m.sender_id)
-        seen = reads_map.get(m.id, 0)
-        non_sender_count = max(0, member_count - 1)
+        non_sender_count = max(0, total_members - 1)
         out.append(MessageOut(
             id=m.id, group_id=m.group_id, sender_id=m.sender_id,
             sender_name=(s.full_name or s.email) if s else "Unknown",
             msg_type=m.msg_type, content=m.content,
             media_url=m.media_url, media_name=m.media_name,
             created_at=m.created_at,
-            delivered_count=seen,
-            seen_count=seen,
+            delivered_count=delivery_map.get(m.id, 0),
+            seen_count=reads_map.get(m.id, 0),
             member_count=non_sender_count,
         ))
     return out
@@ -480,7 +476,7 @@ async def post_message(
     await db.refresh(msg)
 
     # Broadcast via WebSocket to all connected users
-    # Include member_count so receivers can render ticks immediately
+    # New message starts at SENT state: delivered_count=0, seen_count=0
     _mq = await db.execute(select(GroupMember.user_id).where(GroupMember.group_id == gid))
     _member_count = max(0, len(_mq.all()) - 1)
     await manager.broadcast(gid, {
@@ -490,7 +486,7 @@ async def post_message(
         "msg_type": body.msg_type, "content": content,
         "media_url": body.media_url, "media_name": body.media_name,
         "created_at": msg.created_at.isoformat(),
-        "seen_count": 0, "member_count": _member_count,
+        "delivered_count": 0, "seen_count": 0, "member_count": _member_count,
     })
 
     # Send push notification to offline group members
@@ -513,6 +509,7 @@ async def post_message(
             sender_id=current_user.id,
             db=db,
             group_id=gid,
+            message_id=msg.id,
         )
     except Exception:
         pass  # Don't fail the message send if push fails
@@ -523,7 +520,7 @@ async def post_message(
         msg_type=msg.msg_type, content=msg.content,
         media_url=msg.media_url, media_name=msg.media_name,
         created_at=msg.created_at,
-        seen_count=0, member_count=_member_count,
+        delivered_count=0, seen_count=0, member_count=_member_count,
     )
 
 
@@ -548,72 +545,134 @@ async def delete_message(
 
 
 # ═══════════════════════════════════════════════════════════════
-# Mark message(s) as seen — WhatsApp-style blue ticks
+# Delivery acknowledgement — double grey tick (✓✓)
+# Called when a client's device RECEIVES the message (via WS, FCM, or poll).
+# This is NOT the same as reading — it means the device got the data.
 # ═══════════════════════════════════════════════════════════════
-@router.post("/messages/{mid}/seen")
-async def mark_message_seen(
-    mid: int,
+class DeliverAck(BaseModel):
+    message_ids: List[int]
+
+
+@router.post("/messages/deliver")
+async def acknowledge_delivery(
+    body: DeliverAck,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark a message as seen by the current user. Broadcasts tick update to the group."""
-    result = await db.execute(select(ChatMessage).where(ChatMessage.id == mid))
-    msg = result.scalar_one_or_none()
-    if not msg:
-        raise HTTPException(404, "Message not found.")
-    # Don't record sender reading their own message
-    if msg.sender_id == current_user.id:
+    """
+    Batch delivery acknowledgement. Client sends list of message IDs it has received.
+    Idempotent: duplicate ACKs are silently ignored.
+    Only records delivery for messages where current_user is NOT the sender.
+    """
+    if not body.message_ids:
         return {"ok": True}
-    # Upsert read record
-    existing = await db.execute(
-        select(MessageRead).where(
-            MessageRead.message_id == mid,
-            MessageRead.user_id == current_user.id
+
+    # Get the actual messages to validate they exist and get group_ids
+    result = await db.execute(
+        select(ChatMessage).where(
+            ChatMessage.id.in_(body.message_ids),
+            ChatMessage.sender_id != current_user.id  # Don't ACK own messages
         )
     )
-    if not existing.scalar_one_or_none():
-        db.add(MessageRead(message_id=mid, user_id=current_user.id))
+    messages = result.scalars().all()
+    if not messages:
+        return {"ok": True}
+
+    # Validate membership for each message's group
+    user_groups = set()
+    for m in messages:
+        user_groups.add(m.group_id)
+
+    for gid in user_groups:
+        if not await check_membership(current_user.id, gid, db):
+            raise HTTPException(403, "Not a member of one or more groups.")
+
+    # Find which messages already have delivery ACK from this user
+    existing_q = await db.execute(
+        select(MessageDelivery.message_id).where(
+            MessageDelivery.message_id.in_([m.id for m in messages]),
+            MessageDelivery.user_id == current_user.id,
+        )
+    )
+    already_delivered = {r[0] for r in existing_q.all()}
+
+    # Insert new delivery records (idempotent — skip existing)
+    new_deliveries = [m for m in messages if m.id not in already_delivered]
+    for m in new_deliveries:
+        db.add(MessageDelivery(message_id=m.id, user_id=current_user.id))
+
+    if new_deliveries:
         await db.flush()
-    # Count current reads
-    count_q = await db.execute(
-        select(MessageRead).where(MessageRead.message_id == mid)
-    )
-    seen_count = len(count_q.scalars().all())
-    # Get non-sender member count for this group
-    mq = await db.execute(
-        select(GroupMember.user_id).where(GroupMember.group_id == msg.group_id)
-    )
-    member_count = max(0, len(mq.all()) - 1)
-    # Broadcast tick update so sender sees live tick change
-    await manager.broadcast(msg.group_id, {
-        "event": "message_status",
-        "id": mid,
-        "seen_count": seen_count,
-        "member_count": member_count,
-    })
-    return {"ok": True, "seen_count": seen_count, "member_count": member_count}
+
+        # Group messages by group_id for broadcasting
+        groups_msgs: dict[int, list] = {}
+        for m in new_deliveries:
+            groups_msgs.setdefault(m.group_id, []).append(m.id)
+
+        # Broadcast status updates per group
+        for gid, mids in groups_msgs.items():
+            mq = await db.execute(select(GroupMember.user_id).where(GroupMember.group_id == gid))
+            member_count = max(0, len(mq.all()) - 1)
+
+            # Get delivery counts for affected messages
+            dq = await db.execute(
+                select(MessageDelivery.message_id).where(MessageDelivery.message_id.in_(mids))
+            )
+            del_counts: dict[int, int] = {}
+            for row in dq.all():
+                del_counts[row[0]] = del_counts.get(row[0], 0) + 1
+
+            # Get read counts for affected messages
+            rq = await db.execute(
+                select(MessageRead.message_id).where(MessageRead.message_id.in_(mids))
+            )
+            read_counts: dict[int, int] = {}
+            for row in rq.all():
+                read_counts[row[0]] = read_counts.get(row[0], 0) + 1
+
+            for mid in mids:
+                await manager.broadcast(gid, {
+                    "event": "message_status",
+                    "id": mid,
+                    "delivered_count": del_counts.get(mid, 0),
+                    "seen_count": read_counts.get(mid, 0),
+                    "member_count": member_count,
+                })
+
+    return {"ok": True, "delivered": len(new_deliveries)}
 
 
-@router.post("/groups/{gid}/seen")
-async def mark_group_messages_seen(
+# ═══════════════════════════════════════════════════════════════
+# Read acknowledgement — double blue tick (✓✓ blue)
+# Called when the user actually OPENS the chat and VIEWS messages.
+# ═══════════════════════════════════════════════════════════════
+@router.post("/groups/{gid}/read")
+async def mark_group_messages_read(
     gid: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark all recent unread messages in a group as seen (called when user opens a group)."""
+    """
+    Mark all recent unread messages in a group as READ by current user.
+    Called when user opens/views a conversation. Also implicitly marks as delivered.
+    Idempotent: duplicate calls are safe.
+    """
     await require_member(current_user, gid, db)
-    # Get last 100 messages in this group
+
+    # Get last 200 messages not sent by current user
     result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.group_id == gid, ChatMessage.sender_id != current_user.id)
         .order_by(ChatMessage.id.desc())
-        .limit(100)
+        .limit(200)
     )
     msgs = result.scalars().all()
     if not msgs:
-        return {"ok": True}
+        return {"ok": True, "marked": 0}
+
     msg_ids = [m.id for m in msgs]
-    # Find which ones are already read
+
+    # Find which are already read by this user
     rq = await db.execute(
         select(MessageRead.message_id).where(
             MessageRead.message_id.in_(msg_ids),
@@ -621,30 +680,58 @@ async def mark_group_messages_seen(
         )
     )
     already_read = {r[0] for r in rq.all()}
+
+    # Also ensure delivery is recorded (reading implies delivery)
+    dq = await db.execute(
+        select(MessageDelivery.message_id).where(
+            MessageDelivery.message_id.in_(msg_ids),
+            MessageDelivery.user_id == current_user.id
+        )
+    )
+    already_delivered = {r[0] for r in dq.all()}
+
+    # Insert missing delivery records
+    for mid in msg_ids:
+        if mid not in already_delivered:
+            db.add(MessageDelivery(message_id=mid, user_id=current_user.id))
+
+    # Insert missing read records
     new_reads = [mid for mid in msg_ids if mid not in already_read]
     for mid in new_reads:
         db.add(MessageRead(message_id=mid, user_id=current_user.id))
-    if new_reads:
+
+    if new_reads or (set(msg_ids) - already_delivered):
         await db.flush()
-        # Get member count once
-        mq = await db.execute(
-            select(GroupMember.user_id).where(GroupMember.group_id == gid)
-        )
+
+    # Broadcast status updates for newly-read messages
+    if new_reads:
+        mq = await db.execute(select(GroupMember.user_id).where(GroupMember.group_id == gid))
         member_count = max(0, len(mq.all()) - 1)
-        # Broadcast status for all newly read messages
+
+        # Get current delivery and read counts
+        dq2 = await db.execute(
+            select(MessageDelivery.message_id).where(MessageDelivery.message_id.in_(msg_ids))
+        )
+        del_counts: dict[int, int] = {}
+        for row in dq2.all():
+            del_counts[row[0]] = del_counts.get(row[0], 0) + 1
+
         rq2 = await db.execute(
             select(MessageRead.message_id).where(MessageRead.message_id.in_(msg_ids))
         )
-        seen_counts: dict[int, int] = {}
+        read_counts: dict[int, int] = {}
         for row in rq2.all():
-            seen_counts[row[0]] = seen_counts.get(row[0], 0) + 1
+            read_counts[row[0]] = read_counts.get(row[0], 0) + 1
+
         for mid in new_reads:
             await manager.broadcast(gid, {
                 "event": "message_status",
                 "id": mid,
-                "seen_count": seen_counts.get(mid, 1),
+                "delivered_count": del_counts.get(mid, 0),
+                "seen_count": read_counts.get(mid, 0),
                 "member_count": member_count,
             })
+
     return {"ok": True, "marked": len(new_reads)}
 # ═══════════════════════════════════════════════════════════════
 @router.post("/upload")
@@ -759,6 +846,7 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                             sender_id=user.id,
                             db=db,
                             group_id=group_id,
+                            message_id=msg.id,
                         )
                     except Exception:
                         pass
@@ -769,7 +857,8 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                     "msg_type": msg_type, "content": content or None,
                     "media_url": media_url, "media_name": media_name,
                     "created_at": msg.created_at.isoformat(),
-                    "seen_count": 0, "member_count": max(0, len(manager.online_in_group(group_id)) - 1),
+                    "delivered_count": 0, "seen_count": 0,
+                    "member_count": max(0, len(member_ids) - 1),
                 })
 
             elif event == "typing":
@@ -778,6 +867,135 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                     "name": user.full_name or user.email,
                     "typing": data.get("typing", False),
                 })
+
+            elif event == "deliver":
+                # Client ACKs delivery of specific message IDs via WebSocket
+                msg_ids = data.get("message_ids", [])
+                if msg_ids:
+                    async with AsyncSessionLocal() as ack_db:
+                        # Get messages that aren't from this user
+                        r = await ack_db.execute(
+                            select(ChatMessage).where(
+                                ChatMessage.id.in_(msg_ids),
+                                ChatMessage.group_id == group_id,
+                                ChatMessage.sender_id != user.id,
+                            )
+                        )
+                        valid_msgs = r.scalars().all()
+                        if valid_msgs:
+                            # Check existing deliveries
+                            eq = await ack_db.execute(
+                                select(MessageDelivery.message_id).where(
+                                    MessageDelivery.message_id.in_([m.id for m in valid_msgs]),
+                                    MessageDelivery.user_id == user.id,
+                                )
+                            )
+                            already = {row[0] for row in eq.all()}
+                            new_ids = [m.id for m in valid_msgs if m.id not in already]
+                            for mid in new_ids:
+                                ack_db.add(MessageDelivery(message_id=mid, user_id=user.id))
+                            if new_ids:
+                                await ack_db.flush()
+                                await ack_db.commit()
+                                # Get counts and broadcast
+                                mq = await ack_db.execute(
+                                    select(GroupMember.user_id).where(GroupMember.group_id == group_id)
+                                )
+                                mc = max(0, len(mq.all()) - 1)
+                                dq = await ack_db.execute(
+                                    select(MessageDelivery.message_id).where(
+                                        MessageDelivery.message_id.in_(new_ids)
+                                    )
+                                )
+                                dc: dict[int, int] = {}
+                                for row in dq.all():
+                                    dc[row[0]] = dc.get(row[0], 0) + 1
+                                rq = await ack_db.execute(
+                                    select(MessageRead.message_id).where(
+                                        MessageRead.message_id.in_(new_ids)
+                                    )
+                                )
+                                rc: dict[int, int] = {}
+                                for row in rq.all():
+                                    rc[row[0]] = rc.get(row[0], 0) + 1
+                                for mid in new_ids:
+                                    await manager.broadcast(group_id, {
+                                        "event": "message_status",
+                                        "id": mid,
+                                        "delivered_count": dc.get(mid, 0),
+                                        "seen_count": rc.get(mid, 0),
+                                        "member_count": mc,
+                                    })
+
+            elif event == "read":
+                # Client ACKs reading of messages in this group via WebSocket
+                async with AsyncSessionLocal() as ack_db:
+                    r = await ack_db.execute(
+                        select(ChatMessage)
+                        .where(
+                            ChatMessage.group_id == group_id,
+                            ChatMessage.sender_id != user.id,
+                        )
+                        .order_by(ChatMessage.id.desc())
+                        .limit(100)
+                    )
+                    msgs_to_read = r.scalars().all()
+                    if msgs_to_read:
+                        mids = [m.id for m in msgs_to_read]
+                        # Check existing reads
+                        eq = await ack_db.execute(
+                            select(MessageRead.message_id).where(
+                                MessageRead.message_id.in_(mids),
+                                MessageRead.user_id == user.id,
+                            )
+                        )
+                        already_read = {row[0] for row in eq.all()}
+                        # Also ensure delivery
+                        deq = await ack_db.execute(
+                            select(MessageDelivery.message_id).where(
+                                MessageDelivery.message_id.in_(mids),
+                                MessageDelivery.user_id == user.id,
+                            )
+                        )
+                        already_del = {row[0] for row in deq.all()}
+                        for mid in mids:
+                            if mid not in already_del:
+                                ack_db.add(MessageDelivery(message_id=mid, user_id=user.id))
+                        new_reads = [mid for mid in mids if mid not in already_read]
+                        for mid in new_reads:
+                            ack_db.add(MessageRead(message_id=mid, user_id=user.id))
+                        if new_reads:
+                            await ack_db.flush()
+                            await ack_db.commit()
+                            # Broadcast
+                            mq = await ack_db.execute(
+                                select(GroupMember.user_id).where(GroupMember.group_id == group_id)
+                            )
+                            mc = max(0, len(mq.all()) - 1)
+                            dq = await ack_db.execute(
+                                select(MessageDelivery.message_id).where(
+                                    MessageDelivery.message_id.in_(mids)
+                                )
+                            )
+                            dc: dict[int, int] = {}
+                            for row in dq.all():
+                                dc[row[0]] = dc.get(row[0], 0) + 1
+                            rq = await ack_db.execute(
+                                select(MessageRead.message_id).where(
+                                    MessageRead.message_id.in_(mids)
+                                )
+                            )
+                            rc: dict[int, int] = {}
+                            for row in rq.all():
+                                rc[row[0]] = rc.get(row[0], 0) + 1
+                            for mid in new_reads:
+                                await manager.broadcast(group_id, {
+                                    "event": "message_status",
+                                    "id": mid,
+                                    "delivered_count": dc.get(mid, 0),
+                                    "seen_count": rc.get(mid, 0),
+                                    "member_count": mc,
+                                })
 
     except WebSocketDisconnect:
         pass

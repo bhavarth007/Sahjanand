@@ -152,8 +152,8 @@ async function selectGroup(gid) {
   toggleInputBar();
   connectWs(token, gid);
 
-  // Mark all messages as seen (triggers blue tick for senders) — fire and forget
-  fetch(`${CHAT_API}/api/chat/groups/${gid}/seen`, {
+  // Mark all messages as READ (triggers blue tick for senders) — fire and forget
+  fetch(`${CHAT_API}/api/chat/groups/${gid}/read`, {
     method: 'POST', headers: { Authorization: `Bearer ${token}` }
   }).catch(() => {});
 
@@ -220,20 +220,18 @@ function buildBubble(msg) {
   // Uses Font Awesome: fa-check for single tick, fa-check-double for double tick
   let tickHtml = '';
   if (mine) {
+    const delivered = msg.delivered_count || 0;
     const seen = msg.seen_count || 0;
     const total = msg.member_count || 0;
-    if (total === 0) {
-      // Single tick: sent (no other members yet)
-      tickHtml = `<span class="msg-tick msg-tick-sent" data-msg-id="${msg.id}" title="Sent"><i class="fa-solid fa-check"></i></span>`;
-    } else if (seen >= total) {
-      // Double blue tick: all members seen
+    if (seen > 0 && seen >= total) {
+      // All members read → double blue tick
       tickHtml = `<span class="msg-tick msg-tick-seen" data-msg-id="${msg.id}" title="Seen by all"><i class="fa-solid fa-check-double"></i></span>`;
-    } else if (seen > 0) {
-      // Double grey tick: some members seen (partially read)
-      tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered (${seen}/${total} seen)"><i class="fa-solid fa-check-double"></i></span>`;
-    } else {
-      // Double grey tick: delivered but not opened yet
+    } else if (delivered > 0) {
+      // At least one device received → double grey tick (delivered)
       tickHtml = `<span class="msg-tick msg-tick-delivered" data-msg-id="${msg.id}" title="Delivered"><i class="fa-solid fa-check-double"></i></span>`;
+    } else {
+      // Nobody received yet → single grey tick (sent to server only)
+      tickHtml = `<span class="msg-tick msg-tick-sent" data-msg-id="${msg.id}" title="Sent"><i class="fa-solid fa-check"></i></span>`;
     }
   }
 
@@ -335,9 +333,15 @@ function connectWs(token, gid) {
 
 function handleWs(d) {
   switch(d.event) {
-    case 'message': appendMsg(d,true); break;
+    case 'message':
+      appendMsg(d, true);
+      // Send delivery ACK for messages from other users (I received it)
+      if (d.sender_id !== currentUserId && d.id && chatWs && chatWs.readyState === 1) {
+        chatWs.send(JSON.stringify({ event: 'deliver', message_ids: [d.id] }));
+      }
+      break;
     case 'message_deleted': const el=document.querySelector(`[data-msg-id="${d.id}"]`); if(el) el.remove(); break;
-    case 'message_status': updateMsgTick(d.id, d.seen_count, d.member_count); break;
+    case 'message_status': updateMsgTick(d.id, d.delivered_count, d.seen_count, d.member_count); break;
     case 'typing': showTyping(d); break;
     case 'user_joined': case 'user_left': chatOnline=new Set(d.online||[]); updateOnline(); break;
     case 'member_added': case 'member_removed': loadGroupMembers(localStorage.getItem('sahjanand_token'),currentGroupId); break;
@@ -346,22 +350,25 @@ function handleWs(d) {
 }
 
 // Update tick mark on a specific message in real time
-function updateMsgTick(msgId, seenCount, memberCount) {
+function updateMsgTick(msgId, deliveredCount, seenCount, memberCount) {
   const tickEl = document.querySelector(`.msg-tick[data-msg-id="${msgId}"]`);
   if (!tickEl) return;
   tickEl.className = 'msg-tick';
-  if (!memberCount || memberCount === 0) {
-    tickEl.className += ' msg-tick-sent';
-    tickEl.innerHTML = '<i class="fa-solid fa-check"></i>';
-    tickEl.title = 'Sent';
-  } else if (seenCount >= memberCount) {
+  if (seenCount > 0 && seenCount >= memberCount) {
+    // All read → blue double tick
     tickEl.className += ' msg-tick-seen';
     tickEl.innerHTML = '<i class="fa-solid fa-check-double"></i>';
     tickEl.title = 'Seen by all';
-  } else {
+  } else if (deliveredCount > 0) {
+    // At least one device received → grey double tick
     tickEl.className += ' msg-tick-delivered';
     tickEl.innerHTML = '<i class="fa-solid fa-check-double"></i>';
-    tickEl.title = seenCount > 0 ? `Delivered (${seenCount}/${memberCount} seen)` : 'Delivered';
+    tickEl.title = 'Delivered';
+  } else {
+    // Nobody received → single tick (sent)
+    tickEl.className += ' msg-tick-sent';
+    tickEl.innerHTML = '<i class="fa-solid fa-check"></i>';
+    tickEl.title = 'Sent';
   }
 }
 
