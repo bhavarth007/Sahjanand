@@ -14,12 +14,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const String kProductionUrl = 'https://sahjanand-api.onrender.com';
 const MethodChannel _recorderChannel = MethodChannel('com.sahjanand.recorder');
 
 // ═══════════════════════════════════════════════════════════════
-// NOTIFICATION CHANNELS
+// NOTIFICATION CHANNELS (must match backend channel IDs)
 // ═══════════════════════════════════════════════════════════════
 const String _chatChannelId = 'sahjanand_chat';
 const String _chatChannelName = 'Chat Messages';
@@ -29,28 +31,91 @@ const String _reminderChannelId = 'sahjanand_reminders';
 const String _reminderChannelName = 'Reminders';
 const String _reminderChannelDesc = 'Reminder alerts — alarm style';
 
+// Keep-alive channel (silent, low priority, for foreground service)
+const String _keepAliveChannelId = 'sahjanand_keepalive';
+const String _keepAliveChannelName = 'Background Service';
+const String _keepAliveChannelDesc = 'Keeps notifications working reliably';
+
 // Reply action key
 const String _replyActionId = 'reply_action';
 const String _replyInputKey = 'reply_text';
 
+// SharedPreferences keys
+const String _prefFcmToken = 'fcm_token';
+const String _prefAuthToken = 'auth_token';
+const String _prefTokenRegistered = 'fcm_token_registered';
+
 // ═══════════════════════════════════════════════════════════════
-// FCM Background message handler (must be top-level)
+// FCM Background message handler (MUST be top-level function)
 // ═══════════════════════════════════════════════════════════════
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   await _initLocalNotificationsMinimal();
 
-  // For notification+data messages, Android may auto-show the notification
-  // via the system tray. We still show our custom one with reply actions.
-  // On devices where the background handler fires, this gives us full control.
+  // Data-only messages: always show our custom notification
+  // (No duplicate risk since backend sends data-only, no top-level notification)
   if (message.data.isNotEmpty) {
     await _showSmartNotification(message.data);
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Alarm Manager callback for reminder backup (MUST be top-level)
+// ═══════════════════════════════════════════════════════════════
+@pragma('vm:entry-point')
+Future<void> _alarmCallback() async {
+  // This fires as a backup for reminders when FCM might not deliver.
+  // We check pending reminders from the server and show any that are due.
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  await _initLocalNotificationsMinimal();
+
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final authToken = prefs.getString(_prefAuthToken) ?? '';
+    if (authToken.isEmpty) return;
+
+    // Fetch pending reminders for this user
+    final response = await http.get(
+      Uri.parse('$kProductionUrl/api/chat/my-all-reminders?tab=pending'),
+      headers: {'Authorization': 'Bearer $authToken'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final List reminders = jsonDecode(response.body);
+      final now = DateTime.now();
+
+      for (final r in reminders) {
+        try {
+          final dateStr = r['remind_date'] ?? '';
+          final timeStr = r['remind_time'] ?? '';
+          if (dateStr.isEmpty || timeStr.isEmpty) continue;
+
+          final reminderDt = DateTime.parse('${dateStr}T$timeStr:00');
+          final diff = reminderDt.difference(now).inSeconds;
+
+          // Show notification if reminder is due within 2 minutes
+          if (diff >= -60 && diff <= 120) {
+            final name = r['name'] ?? 'Reminder';
+            final creator = r['created_by_name'] ?? '';
+            await _showReminderNotification(
+              '\u26a1 Reminder Alert!',
+              '$name${creator.isNotEmpty ? ' (set by $creator)' : ''} is due NOW!',
+              {'type': 'reminder_alert', 'title': name},
+            );
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Local notifications plugin (global for background access)
-final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+// ═══════════════════════════════════════════════════════════════
+final FlutterLocalNotificationsPlugin _localNotifications =
+    FlutterLocalNotificationsPlugin();
 
 /// Minimal init for background isolate
 Future<void> _initLocalNotificationsMinimal() async {
@@ -60,37 +125,54 @@ Future<void> _initLocalNotificationsMinimal() async {
   await _localNotifications.initialize(
     initSettings,
     onDidReceiveNotificationResponse: _onNotificationResponse,
-    onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
+    onDidReceiveBackgroundNotificationResponse:
+        _onBackgroundNotificationResponse,
   );
 
   // Create channels in background isolate too (they might not exist yet)
   final androidPlugin = _localNotifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
   if (androidPlugin != null) {
-    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
-      _chatChannelId,
-      _chatChannelName,
-      description: _chatChannelDesc,
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-      sound: RawResourceAndroidNotificationSound('chat_tone'),
-    ));
-    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
-      _reminderChannelId,
-      _reminderChannelName,
-      description: _reminderChannelDesc,
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-      sound: RawResourceAndroidNotificationSound('alarm_tone'),
-    ));
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _chatChannelId,
+        _chatChannelName,
+        description: _chatChannelDesc,
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        sound: RawResourceAndroidNotificationSound('chat_tone'),
+      ),
+    );
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _reminderChannelId,
+        _reminderChannelName,
+        description: _reminderChannelDesc,
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        sound: RawResourceAndroidNotificationSound('alarm_tone'),
+      ),
+    );
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _keepAliveChannelId,
+        _keepAliveChannelName,
+        description: _keepAliveChannelDesc,
+        importance: Importance.min,
+        playSound: false,
+        enableVibration: false,
+      ),
+    );
   }
 }
 
 /// Handle notification tap or reply action in foreground
 void _onNotificationResponse(NotificationResponse response) {
-  if (response.notificationResponseType == NotificationResponseType.selectedNotificationAction) {
+  if (response.notificationResponseType ==
+      NotificationResponseType.selectedNotificationAction) {
     if (response.actionId == _replyActionId && response.input != null) {
       _sendReplyFromNotification(response.input!, response.payload);
     }
@@ -106,15 +188,30 @@ void _onBackgroundNotificationResponse(NotificationResponse response) {
 }
 
 /// Send reply directly to backend from notification action
-Future<void> _sendReplyFromNotification(String replyText, String? payload) async {
+Future<void> _sendReplyFromNotification(
+    String replyText, String? payload) async {
   if (replyText.trim().isEmpty || payload == null) return;
   try {
     final data = jsonDecode(payload);
-    final groupName = data['group_name'] ?? '';
     final authToken = data['auth_token'] ?? '';
     final groupId = data['group_id'] ?? '';
 
-    if (authToken.isEmpty || groupId.isEmpty) return;
+    if (authToken.isEmpty || groupId.isEmpty) {
+      // Try getting auth token from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final savedToken = prefs.getString(_prefAuthToken) ?? '';
+      if (savedToken.isEmpty || groupId.isEmpty) return;
+
+      await http.post(
+        Uri.parse('$kProductionUrl/api/chat/groups/$groupId/messages'),
+        headers: {
+          'Authorization': 'Bearer $savedToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'msg_type': 'text', 'content': replyText.trim()}),
+      );
+      return;
+    }
 
     await http.post(
       Uri.parse('$kProductionUrl/api/chat/groups/$groupId/messages'),
@@ -122,10 +219,7 @@ Future<void> _sendReplyFromNotification(String replyText, String? payload) async
         'Authorization': 'Bearer $authToken',
         'Content-Type': 'application/json',
       },
-      body: jsonEncode({
-        'msg_type': 'text',
-        'content': replyText.trim(),
-      }),
+      body: jsonEncode({'msg_type': 'text', 'content': replyText.trim()}),
     );
   } catch (_) {}
 }
@@ -135,6 +229,13 @@ Future<void> _showSmartNotification(Map<String, dynamic> data) async {
   final type = data['type'] ?? '';
   final title = data['title'] ?? 'Sahjanand';
   final body = data['body'] ?? '';
+
+  // Skip showing if notification is too old (more than 5 minutes)
+  final sentAt = int.tryParse(data['sent_at']?.toString() ?? '');
+  if (sentAt != null) {
+    final age = DateTime.now().millisecondsSinceEpoch ~/ 1000 - sentAt;
+    if (age > 300) return; // Skip notifications older than 5 minutes
+  }
 
   if (type == 'chat') {
     await _showChatNotification(title, body, data);
@@ -146,7 +247,19 @@ Future<void> _showSmartNotification(Map<String, dynamic> data) async {
 }
 
 /// Chat notification with reply action (WhatsApp style)
-Future<void> _showChatNotification(String title, String body, Map<String, dynamic> data) async {
+Future<void> _showChatNotification(
+    String title, String body, Map<String, dynamic> data) async {
+  // Try to inject auth token from shared prefs for reply action
+  try {
+    if (!data.containsKey('auth_token') || (data['auth_token']?.isEmpty ?? true)) {
+      final prefs = await SharedPreferences.getInstance();
+      final savedToken = prefs.getString(_prefAuthToken) ?? '';
+      if (savedToken.isNotEmpty) {
+        data['auth_token'] = savedToken;
+      }
+    }
+  } catch (_) {}
+
   final androidDetails = AndroidNotificationDetails(
     _chatChannelId,
     _chatChannelName,
@@ -175,7 +288,6 @@ Future<void> _showChatNotification(String title, String body, Map<String, dynami
     ],
   );
 
-  // Store auth info in payload for reply handling
   final payload = jsonEncode(data);
 
   await _localNotifications.show(
@@ -188,7 +300,8 @@ Future<void> _showChatNotification(String title, String body, Map<String, dynami
 }
 
 /// Reminder notification — alarm style with long vibration and full-screen intent
-Future<void> _showReminderNotification(String title, String body, Map<String, dynamic> data) async {
+Future<void> _showReminderNotification(
+    String title, String body, Map<String, dynamic> data) async {
   final androidDetails = AndroidNotificationDetails(
     _reminderChannelId,
     _reminderChannelName,
@@ -198,7 +311,8 @@ Future<void> _showReminderNotification(String title, String body, Map<String, dy
     showWhen: true,
     enableVibration: true,
     // 5 second vibration pattern: vibrate 1s, pause 0.5s, vibrate 1s, pause 0.5s, vibrate 1.5s
-    vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1500]),
+    vibrationPattern:
+        Int64List.fromList([0, 1000, 500, 1000, 500, 1500]),
     playSound: true,
     sound: const RawResourceAndroidNotificationSound('alarm_tone'),
     icon: '@mipmap/ic_launcher',
@@ -242,14 +356,20 @@ Future<void> _showGenericNotification(String title, String body) async {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase
   await Firebase.initializeApp();
 
-  // Set up background message handler
+  // Set up background message handler BEFORE any other FCM calls
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Initialize Android Alarm Manager (for reminder backup scheduling)
+  await AndroidAlarmManager.initialize();
 
   // Initialize local notifications with action handling
   const initSettings = InitializationSettings(
@@ -258,36 +378,65 @@ void main() async {
   await _localNotifications.initialize(
     initSettings,
     onDidReceiveNotificationResponse: _onNotificationResponse,
-    onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
+    onDidReceiveBackgroundNotificationResponse:
+        _onBackgroundNotificationResponse,
   );
 
   // Create notification channels (Android 8+)
   final androidPlugin = _localNotifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
 
   if (androidPlugin != null) {
     // Chat channel — with reply action support and custom sound
-    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
-      _chatChannelId,
-      _chatChannelName,
-      description: _chatChannelDesc,
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-      sound: RawResourceAndroidNotificationSound('chat_tone'),
-    ));
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _chatChannelId,
+        _chatChannelName,
+        description: _chatChannelDesc,
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        sound: RawResourceAndroidNotificationSound('chat_tone'),
+      ),
+    );
 
     // Reminder channel — alarm style, long vibration, custom alarm sound
-    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
-      _reminderChannelId,
-      _reminderChannelName,
-      description: _reminderChannelDesc,
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-      sound: RawResourceAndroidNotificationSound('alarm_tone'),
-    ));
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _reminderChannelId,
+        _reminderChannelName,
+        description: _reminderChannelDesc,
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        sound: RawResourceAndroidNotificationSound('alarm_tone'),
+      ),
+    );
+
+    // Keep-alive channel — silent, for background service
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _keepAliveChannelId,
+        _keepAliveChannelName,
+        description: _keepAliveChannelDesc,
+        importance: Importance.min,
+        playSound: false,
+        enableVibration: false,
+      ),
+    );
   }
+
+  // Schedule periodic alarm as backup for reminders (every 60 seconds)
+  // This ensures reminders fire even if FCM doesn't deliver
+  await AndroidAlarmManager.periodic(
+    const Duration(seconds: 60),
+    0, // alarm ID
+    _alarmCallback,
+    exact: true,
+    wakeup: true,
+    rescheduleOnReboot: true,
+  );
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -306,7 +455,8 @@ class SahjanandApp extends StatelessWidget {
       title: 'Sahjanand',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFC8290C)),
+        colorScheme:
+            ColorScheme.fromSeed(seedColor: const Color(0xFFC8290C)),
         useMaterial3: true,
       ),
       home: const WebViewScreen(),
@@ -320,7 +470,8 @@ class WebViewScreen extends StatefulWidget {
   State<WebViewScreen> createState() => _WebViewScreenState();
 }
 
-class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserver {
+class _WebViewScreenState extends State<WebViewScreen>
+    with WidgetsBindingObserver {
   late final WebViewController _controller;
   bool _isLoading = true, _hasError = false, _ready = false;
   int _retryCount = 0;
@@ -333,6 +484,10 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
   // Audio recorder using native MethodChannel (Kotlin MediaRecorder)
   String? _currentRecordingPath;
+
+  // FCM token registration state
+  Timer? _tokenRetryTimer;
+  bool _fcmTokenRegistered = false;
 
   @override
   void initState() {
@@ -363,104 +518,164 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // FCM SETUP
+  // FCM SETUP — Robust notification initialization
   // ═══════════════════════════════════════════════════════════════
   Future<void> _initFCM() async {
     final messaging = FirebaseMessaging.instance;
 
-    // Request permission (Android 13+)
-    await messaging.requestPermission(
+    // Request permission (Android 13+ requires runtime permission)
+    final settings = await messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
       provisional: false,
+      criticalAlert: true, // For alarm-style reminders
     );
 
-    // Ensure data messages are delivered with high priority even in background/killed
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      debugPrint('[FCM] Notification permission denied by user');
+    }
+
+    // For data-only messages, this doesn't matter much, but set it anyway
     await messaging.setForegroundNotificationPresentationOptions(
-      alert: true,
+      alert: false, // We handle foreground display ourselves
       badge: true,
-      sound: true,
+      sound: false,
     );
 
-    // Subscribe to a topic for group delivery fallback
+    // Subscribe to a topic for broadcast messages
     await messaging.subscribeToTopic('all_users');
 
-    // Get FCM token and register with backend
+    // Get FCM token and start registration process
     final fcmToken = await messaging.getToken();
     if (fcmToken != null) {
-      _registerFcmToken(fcmToken);
+      _startTokenRegistration(fcmToken);
     }
 
     // Listen for token refresh
-    messaging.onTokenRefresh.listen(_registerFcmToken);
+    messaging.onTokenRefresh.listen((newToken) {
+      _startTokenRegistration(newToken);
+    });
 
-    // Handle foreground messages — show local notification with reply action
-    // (FCM notification+data messages don't auto-show in foreground, so we handle it)
+    // ─── FOREGROUND messages ───
+    // Data-only messages always come through onMessage when app is in foreground.
+    // We show our custom local notification + in-app banner.
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      if (message.data.isEmpty) return;
+
       final data = Map<String, dynamic>.from(message.data);
 
-      // Inject auth token into data so reply action can use it
+      // Inject auth token for reply action
       try {
-        final tr = await _controller.runJavaScriptReturningResult(
-            'localStorage.getItem("sahjanand_token")');
-        final token = tr.toString().replaceAll('"', '');
-        if (token != 'null' && token.isNotEmpty) {
-          data['auth_token'] = token;
+        final prefs = await SharedPreferences.getInstance();
+        final savedToken = prefs.getString(_prefAuthToken) ?? '';
+        if (savedToken.isNotEmpty) {
+          data['auth_token'] = savedToken;
         }
       } catch (_) {}
 
+      // Show system notification (in notification bar) even in foreground
       await _showSmartNotification(data);
 
       // Also show in-app banner
-      final title = data['title'] ?? message.notification?.title ?? '';
-      final body = data['body'] ?? message.notification?.body ?? '';
+      final title = data['title'] ?? '';
+      final body = data['body'] ?? '';
       if (title.isNotEmpty || body.isNotEmpty) {
         _showNotif(title, body, data['type'] ?? 'reminder');
       }
     });
 
-    // Handle notification tap when app was in background
+    // ─── Notification tap (app was in background) ───
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      _controller.runJavaScript('if(typeof refreshChatMessages==="function")refreshChatMessages();');
+      _controller.runJavaScript(
+          'if(typeof refreshChatMessages==="function")refreshChatMessages();');
     });
+
+    // ─── Handle initial message (app was terminated, user tapped notification) ───
+    final initialMessage = await messaging.getInitialMessage();
+    if (initialMessage != null) {
+      // App was opened from a terminated state by tapping notification
+      // Will be handled after webview loads
+    }
   }
 
-  Future<void> _registerFcmToken(String fcmToken) async {
-    // Wait a bit for the webview to load and get the auth token
-    await Future.delayed(const Duration(seconds: 3));
-    try {
-      final tr = await _controller.runJavaScriptReturningResult(
-          'localStorage.getItem("sahjanand_token")');
-      final token = tr.toString().replaceAll('"', '');
-      if (token == 'null' || token.isEmpty) return;
+  /// Start FCM token registration with robust retry logic.
+  /// The challenge: webview needs to load first so we can get auth token.
+  /// Solution: persist auth token to SharedPreferences and retry registration.
+  void _startTokenRegistration(String fcmToken) async {
+    // Save FCM token for later use
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefFcmToken, fcmToken);
 
-      await http.post(
-        Uri.parse('$kProductionUrl/api/auth/fcm-token'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'fcm_token': fcmToken}),
-      );
-    } catch (_) {
-      // Retry once after delay
-      await Future.delayed(const Duration(seconds: 10));
+    // Try registering immediately if we have a saved auth token
+    final savedAuthToken = prefs.getString(_prefAuthToken) ?? '';
+    if (savedAuthToken.isNotEmpty) {
+      final success = await _registerFcmTokenWithServer(fcmToken, savedAuthToken);
+      if (success) {
+        _fcmTokenRegistered = true;
+        return;
+      }
+    }
+
+    // Retry with exponential backoff — wait for webview to load and extract token
+    _tokenRetryTimer?.cancel();
+    int attempt = 0;
+    _tokenRetryTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      attempt++;
+      if (attempt > 12 || _fcmTokenRegistered) {
+        timer.cancel();
+        return;
+      }
+
+      // Try to get auth token from webview
       try {
         final tr = await _controller.runJavaScriptReturningResult(
             'localStorage.getItem("sahjanand_token")');
         final token = tr.toString().replaceAll('"', '');
-        if (token == 'null' || token.isEmpty) return;
-        await http.post(
-          Uri.parse('$kProductionUrl/api/auth/fcm-token'),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({'fcm_token': fcmToken}),
-        );
-      } catch (_) {}
+        if (token != 'null' && token.isNotEmpty) {
+          // Save auth token for future use (background handler, reply actions)
+          await prefs.setString(_prefAuthToken, token);
+
+          final success = await _registerFcmTokenWithServer(fcmToken, token);
+          if (success) {
+            _fcmTokenRegistered = true;
+            timer.cancel();
+          }
+        }
+      } catch (_) {
+        // Webview might not be ready yet, will retry
+      }
+    });
+  }
+
+  /// Actually register FCM token with the backend
+  Future<bool> _registerFcmTokenWithServer(
+      String fcmToken, String authToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$kProductionUrl/api/auth/fcm-token'),
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'fcm_token': fcmToken}),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint('[FCM] Token registered successfully');
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_prefTokenRegistered, true);
+        return true;
+      } else if (response.statusCode == 401) {
+        // Auth token expired, clear saved token
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_prefAuthToken);
+        return false;
+      }
+    } catch (e) {
+      debugPrint('[FCM] Token registration failed: $e');
     }
+    return false;
   }
 
   void _initWebView() {
@@ -470,7 +685,8 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
     _controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel('FlutterBridge', onMessageReceived: _onBridgeMessage)
+      ..addJavaScriptChannel('FlutterBridge',
+          onMessageReceived: _onBridgeMessage)
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (_) {
           if (mounted) setState(() { _isLoading = true; _hasError = false; });
@@ -478,6 +694,8 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
         onPageFinished: (_) {
           if (mounted) setState(() { _isLoading = false; _retryCount = 0; });
           _injectBridge();
+          // After page load, try to save the auth token
+          _saveAuthTokenFromWebview();
         },
         onWebResourceError: (e) {
           if (e.isForMainFrame ?? true) {
@@ -487,7 +705,8 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                 if (mounted) _controller.loadRequest(Uri.parse(kProductionUrl));
               });
             } else {
-              if (mounted) setState(() { _hasError = true; _isLoading = false; });
+              if (mounted)
+                setState(() { _hasError = true; _isLoading = false; });
             }
           }
         },
@@ -499,6 +718,30 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       ac.setMediaPlaybackRequiresUserGesture(false);
       ac.setOnPlatformPermissionRequest((r) => r.grant());
     }
+  }
+
+  /// Save auth token from webview to SharedPreferences for background use
+  Future<void> _saveAuthTokenFromWebview() async {
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+      final tr = await _controller.runJavaScriptReturningResult(
+          'localStorage.getItem("sahjanand_token")');
+      final token = tr.toString().replaceAll('"', '');
+      if (token != 'null' && token.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_prefAuthToken, token);
+
+        // If FCM token not yet registered, try now
+        if (!_fcmTokenRegistered) {
+          final fcmToken = prefs.getString(_prefFcmToken);
+          if (fcmToken != null) {
+            final success =
+                await _registerFcmTokenWithServer(fcmToken, token);
+            if (success) _fcmTokenRegistered = true;
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -558,6 +801,15 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   window.WebSocket.OPEN = _W.OPEN;
   window.WebSocket.CLOSING = _W.CLOSING;
   window.WebSocket.CLOSED = _W.CLOSED;
+
+  // 4. Save auth token changes to Flutter for background notification handling
+  var _setItem = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(k, v) {
+    _setItem.apply(this, arguments);
+    if (k === 'sahjanand_token') {
+      FlutterBridge.postMessage(JSON.stringify({a:'token', v:v}));
+    }
+  };
 })();
     ''');
   }
@@ -566,9 +818,32 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     try {
       final d = jsonDecode(msg.message);
       switch (d['a']) {
-        case 'file': await _pickAndUpload(d['t'] ?? '*/*'); break;
-        case 'rec': await _toggleRecording(); break;
-        case 'notif': _showNotif(d['s'] ?? '', d['t'] ?? '', d['m'] ?? 'text'); break;
+        case 'file':
+          await _pickAndUpload(d['t'] ?? '*/*');
+          break;
+        case 'rec':
+          await _toggleRecording();
+          break;
+        case 'notif':
+          _showNotif(d['s'] ?? '', d['t'] ?? '', d['m'] ?? 'text');
+          break;
+        case 'token':
+          // Auth token changed in webview, save it
+          final token = d['v']?.toString() ?? '';
+          if (token.isNotEmpty) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_prefAuthToken, token);
+            // Re-register FCM token with new auth
+            if (!_fcmTokenRegistered) {
+              final fcmToken = prefs.getString(_prefFcmToken);
+              if (fcmToken != null) {
+                final success =
+                    await _registerFcmTokenWithServer(fcmToken, token);
+                if (success) _fcmTokenRegistered = true;
+              }
+            }
+          }
+          break;
       }
     } catch (_) {}
   }
@@ -585,20 +860,27 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       if (a.contains('image')) {
         final src = await _pickSourceDialog('Image');
         if (src == null) return;
-        final xf = await ImagePicker().pickImage(source: src, imageQuality: 85);
+        final xf =
+            await ImagePicker().pickImage(source: src, imageQuality: 85);
         if (xf == null) return;
         file = File(xf.path);
-        name = xf.name.isNotEmpty ? xf.name : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        name = xf.name.isNotEmpty
+            ? xf.name
+            : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       } else if (a.contains('video')) {
         final src = await _pickSourceDialog('Video');
         if (src == null) return;
-        final xf = await ImagePicker().pickVideo(source: src, maxDuration: const Duration(minutes: 5));
+        final xf = await ImagePicker().pickVideo(
+            source: src, maxDuration: const Duration(minutes: 5));
         if (xf == null) return;
         file = File(xf.path);
-        name = xf.name.isNotEmpty ? xf.name : 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        name = xf.name.isNotEmpty
+            ? xf.name
+            : 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
       } else {
         final r = await FilePicker.platform.pickFiles(type: FileType.any);
-        if (r == null || r.files.isEmpty || r.files.single.path == null) return;
+        if (r == null || r.files.isEmpty || r.files.single.path == null)
+          return;
         file = File(r.files.single.path!);
         name = r.files.single.name;
       }
@@ -630,9 +912,11 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
     try {
       final dir = await getTemporaryDirectory();
-      _currentRecordingPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      _currentRecordingPath =
+          '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-      await _recorderChannel.invokeMethod('startRecording', {'path': _currentRecordingPath});
+      await _recorderChannel
+          .invokeMethod('startRecording', {'path': _currentRecordingPath});
 
       _recordingSeconds = 0;
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -649,14 +933,16 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     _recordingTimer = null;
 
     try {
-      final path = await _recorderChannel.invokeMethod<String>('stopRecording');
+      final path =
+          await _recorderChannel.invokeMethod<String>('stopRecording');
       if (mounted) setState(() => _isRecording = false);
 
       final filePath = path ?? _currentRecordingPath;
       if (filePath != null && filePath.isNotEmpty) {
         final file = File(filePath);
         if (await file.exists() && await file.length() > 100) {
-          await _upload(file, 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a');
+          await _upload(
+              file, 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a');
         } else {
           _snack('Recording too short');
         }
@@ -669,7 +955,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Future<void> _cancelRecording() async {
     _recordingTimer?.cancel();
     _recordingTimer = null;
-    try { await _recorderChannel.invokeMethod('cancelRecording'); } catch (_) {}
+    try {
+      await _recorderChannel.invokeMethod('cancelRecording');
+    } catch (_) {}
     if (mounted) setState(() => _isRecording = false);
   }
 
@@ -680,14 +968,19 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     final tr = await _controller.runJavaScriptReturningResult(
         'localStorage.getItem("sahjanand_token")');
     final token = tr.toString().replaceAll('"', '');
-    if (token == 'null' || token.isEmpty) { _snack('Not logged in'); return; }
+    if (token == 'null' || token.isEmpty) {
+      _snack('Not logged in');
+      return;
+    }
 
     if (mounted) setState(() => _isUploading = true);
 
     try {
-      final req = http.MultipartRequest('POST', Uri.parse('$kProductionUrl/api/chat/upload'))
+      final req = http.MultipartRequest(
+          'POST', Uri.parse('$kProductionUrl/api/chat/upload'))
         ..headers['Authorization'] = 'Bearer $token'
-        ..files.add(await http.MultipartFile.fromPath('file', file.path, filename: name));
+        ..files.add(
+            await http.MultipartFile.fromPath('file', file.path, filename: name));
 
       final res = await req.send();
       if (mounted) setState(() => _isUploading = false);
@@ -759,16 +1052,25 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // NOTIFICATIONS
+  // IN-APP NOTIFICATIONS (banner at top)
   // ═══════════════════════════════════════════════════════════════
   void _showNotif(String sender, String text, String type) {
     if (!mounted || sender.isEmpty) return;
     String body;
     switch (type) {
-      case 'image': body = '📷 Photo'; break;
-      case 'video': body = '🎬 Video'; break;
-      case 'voice': body = '🎤 Voice note'; break;
-      default: body = text.length > 50 ? '${text.substring(0, 50)}...' : (text.isEmpty ? 'New message' : text);
+      case 'image':
+        body = '\u{1f4f7} Photo';
+        break;
+      case 'video':
+        body = '\u{1f3ac} Video';
+        break;
+      case 'voice':
+        body = '\u{1f3a4} Voice note';
+        break;
+      default:
+        body = text.length > 50
+            ? '${text.substring(0, 50)}...'
+            : (text.isEmpty ? 'New message' : text);
     }
     setState(() => _notifMessage = '$sender: $body');
     _notifTimer?.cancel();
@@ -782,23 +1084,31 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   // HELPERS
   // ═══════════════════════════════════════════════════════════════
   void _snack(String msg) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    if (mounted)
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  String _fmt(int s) => '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
+  String _fmt(int s) =>
+      '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
 
-  Future<ImageSource?> _pickSourceDialog(String type) => showDialog<ImageSource>(
-    context: context,
-    builder: (c) => AlertDialog(
-      title: Text('$type Source'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(leading: const Icon(Icons.camera_alt), title: const Text('Camera'),
-            onTap: () => Navigator.pop(c, ImageSource.camera)),
-        ListTile(leading: const Icon(Icons.photo_library), title: const Text('Gallery'),
-            onTap: () => Navigator.pop(c, ImageSource.gallery)),
-      ]),
-    ),
-  );
+  Future<ImageSource?> _pickSourceDialog(String type) =>
+      showDialog<ImageSource>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text('$type Source'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Camera'),
+                onTap: () => Navigator.pop(c, ImageSource.camera)),
+            ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Gallery'),
+                onTap: () => Navigator.pop(c, ImageSource.gallery)),
+          ]),
+        ),
+      );
 
   // ═══════════════════════════════════════════════════════════════
   // LIFECYCLE
@@ -807,6 +1117,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void dispose() {
     _recordingTimer?.cancel();
     _notifTimer?.cancel();
+    _tokenRetryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -814,12 +1125,19 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _controller.runJavaScript('if(typeof refreshChatMessages==="function")refreshChatMessages();');
+      _controller.runJavaScript(
+          'if(typeof refreshChatMessages==="function")refreshChatMessages();');
+      // Re-save auth token when app resumes (user might have logged in/out)
+      _saveAuthTokenFromWebview();
     }
   }
 
   void _retry() {
-    setState(() { _hasError = false; _isLoading = true; _retryCount = 0; });
+    setState(() {
+      _hasError = false;
+      _isLoading = true;
+      _retryCount = 0;
+    });
     _controller.loadRequest(Uri.parse(kProductionUrl));
   }
 
@@ -829,44 +1147,78 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(backgroundColor: Color(0xFFFFF9F5),
-          body: Center(child: CircularProgressIndicator(color: Color(0xFFC8290C))));
+      return const Scaffold(
+          backgroundColor: Color(0xFFFFF9F5),
+          body: Center(
+              child:
+                  CircularProgressIndicator(color: Color(0xFFC8290C))));
     }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        if (_isRecording) { await _cancelRecording(); return; }
-        if (await _controller.canGoBack()) { await _controller.goBack(); return; }
+        if (_isRecording) {
+          await _cancelRecording();
+          return;
+        }
+        if (await _controller.canGoBack()) {
+          await _controller.goBack();
+          return;
+        }
         SystemNavigator.pop();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFFFF9F5),
-        body: SafeArea(child: Stack(children: [
+        body: SafeArea(
+            child: Stack(children: [
           if (_hasError)
-            Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Icon(Icons.cloud_off_rounded, size: 64, color: Color(0xFFC8290C)),
-              const SizedBox(height: 16),
-              const Text('Could not connect', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
-              ElevatedButton(onPressed: _retry,
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC8290C), foregroundColor: Colors.white),
-                  child: const Text('Retry')),
-            ]))
+            Center(
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                  const Icon(Icons.cloud_off_rounded,
+                      size: 64, color: Color(0xFFC8290C)),
+                  const SizedBox(height: 16),
+                  const Text('Could not connect',
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                      onPressed: _retry,
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC8290C),
+                          foregroundColor: Colors.white),
+                      child: const Text('Retry')),
+                ]))
           else
             WebViewWidget(controller: _controller),
-
           if (_isLoading)
-            Container(color: const Color(0xFFFFF9F5), child: Center(child: Column(
-              mainAxisAlignment: MainAxisAlignment.center, children: [
-                Image.asset('assets/icon.png', width: 100, height: 100,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.business, size: 64, color: Color(0xFFC8290C))),
-                const SizedBox(height: 24),
-                const Text('Sahjanand', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC8290C))),
-                const SizedBox(height: 16),
-                const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(color: Color(0xFFC8290C), strokeWidth: 3)),
-              ]))),
-
+            Container(
+                color: const Color(0xFFFFF9F5),
+                child: Center(
+                    child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                      Image.asset('assets/icon.png',
+                          width: 100,
+                          height: 100,
+                          errorBuilder: (_, __, ___) => const Icon(
+                              Icons.business,
+                              size: 64,
+                              color: Color(0xFFC8290C))),
+                      const SizedBox(height: 24),
+                      const Text('Sahjanand',
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFC8290C))),
+                      const SizedBox(height: 16),
+                      const SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: CircularProgressIndicator(
+                              color: Color(0xFFC8290C), strokeWidth: 3)),
+                    ]))),
           if (_notifMessage != null) _buildNotif(),
           if (_isRecording) _buildRecorder(),
           if (_isUploading) _buildUploading(),
@@ -875,46 +1227,112 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     );
   }
 
-  Widget _buildNotif() => Positioned(top: 0, left: 0, right: 0,
-      child: Material(elevation: 4, child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(color: Color(0xFF2D1B0E),
-              borderRadius: BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12))),
-          child: Row(children: [
-            const CircleAvatar(radius: 18, backgroundColor: Color(0xFFC8290C),
-                child: Icon(Icons.chat, color: Colors.white, size: 18)),
-            const SizedBox(width: 12),
-            Expanded(child: Text(_notifMessage ?? '', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-                maxLines: 2, overflow: TextOverflow.ellipsis)),
-            GestureDetector(onTap: () => setState(() => _notifMessage = null),
-                child: const Icon(Icons.close, color: Colors.white54, size: 20)),
-          ]))));
+  Widget _buildNotif() => Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Material(
+          elevation: 4,
+          child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 12),
+              decoration: const BoxDecoration(
+                  color: Color(0xFF2D1B0E),
+                  borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(12))),
+              child: Row(children: [
+                const CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Color(0xFFC8290C),
+                    child:
+                        Icon(Icons.chat, color: Colors.white, size: 18)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: Text(_notifMessage ?? '',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis)),
+                GestureDetector(
+                    onTap: () =>
+                        setState(() => _notifMessage = null),
+                    child: const Icon(Icons.close,
+                        color: Colors.white54, size: 20)),
+              ]))));
 
-  Widget _buildRecorder() => Positioned(left: 0, right: 0, bottom: 0,
+  Widget _buildRecorder() => Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
       child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(color: Colors.white,
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, -2))]),
-          child: SafeArea(top: false, child: Row(children: [
-            GestureDetector(onTap: _cancelRecording, child: Container(width: 44, height: 44,
-                decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
-                child: const Icon(Icons.delete_outline, color: Colors.red, size: 24))),
-            const SizedBox(width: 12),
-            Expanded(child: Row(children: [
-              Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Text('Recording ${_fmt(_recordingSeconds)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-            ])),
-            GestureDetector(onTap: _stopAndSend, child: Container(width: 48, height: 48,
-                decoration: const BoxDecoration(color: Color(0xFFC8290C), shape: BoxShape.circle),
-                child: const Icon(Icons.send, color: Colors.white, size: 22))),
-          ]))));
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(color: Colors.white, boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 10,
+                offset: const Offset(0, -2))
+          ]),
+          child: SafeArea(
+              top: false,
+              child: Row(children: [
+                GestureDetector(
+                    onTap: _cancelRecording,
+                    child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            shape: BoxShape.circle),
+                        child: const Icon(Icons.delete_outline,
+                            color: Colors.red, size: 24))),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: Row(children: [
+                  Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                          color: Colors.red, shape: BoxShape.circle)),
+                  const SizedBox(width: 8),
+                  Text('Recording ${_fmt(_recordingSeconds)}',
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w500)),
+                ])),
+                GestureDetector(
+                    onTap: _stopAndSend,
+                    child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: const BoxDecoration(
+                            color: Color(0xFFC8290C),
+                            shape: BoxShape.circle),
+                        child: const Icon(Icons.send,
+                            color: Colors.white, size: 22))),
+              ]))));
 
-  Widget _buildUploading() => Positioned(left: 0, right: 0, bottom: 0,
-      child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), color: Colors.white,
-          child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC8290C))),
-            SizedBox(width: 12),
-            Text('Uploading...', style: TextStyle(fontSize: 14, color: Colors.black54)),
-          ])));
+  Widget _buildUploading() => Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 14),
+          color: Colors.white,
+          child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Color(0xFFC8290C))),
+                SizedBox(width: 12),
+                Text('Uploading...',
+                    style:
+                        TextStyle(fontSize: 14, color: Colors.black54)),
+              ])));
 }

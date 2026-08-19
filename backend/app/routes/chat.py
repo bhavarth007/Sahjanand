@@ -455,6 +455,9 @@ async def post_message(
             select(GroupMember.user_id).where(GroupMember.group_id == gid)
         )
         member_ids = [row[0] for row in members_result.all()]
+        # Exclude users currently connected via WebSocket (they already see the message)
+        online_ids = manager.online_in_group(gid)
+        offline_member_ids = [uid for uid in member_ids if uid not in online_ids]
         group = await db.get(ChatGroup, gid)
         group_name = group.name if group else "Group Chat"
         await notify_new_chat_message(
@@ -462,7 +465,7 @@ async def post_message(
             msg_type=body.msg_type,
             content=content or "",
             group_name=group_name,
-            recipient_user_ids=member_ids,
+            recipient_user_ids=offline_member_ids,
             sender_id=current_user.id,
             db=db,
             group_id=gid,
@@ -600,6 +603,9 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                             select(GroupMember.user_id).where(GroupMember.group_id == group_id)
                         )
                         member_ids = [row[0] for row in members_result.all()]
+                        # Exclude users currently connected via WebSocket (they already see the message)
+                        online_ids = manager.online_in_group(group_id)
+                        offline_member_ids = [uid for uid in member_ids if uid not in online_ids]
                         group = await db.get(ChatGroup, group_id)
                         group_name = group.name if group else "Group Chat"
                         await notify_new_chat_message(
@@ -607,7 +613,7 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                             msg_type=msg_type,
                             content=content or "",
                             group_name=group_name,
-                            recipient_user_ids=member_ids,
+                            recipient_user_ids=offline_member_ids,
                             sender_id=user.id,
                             db=db,
                             group_id=group_id,

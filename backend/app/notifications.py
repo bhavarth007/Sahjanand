@@ -25,10 +25,6 @@ logger = logging.getLogger(__name__)
 FCM_V1_URL = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
-# Android notification channel IDs (must match Flutter app)
-_chat_channel = "sahjanand_chat"
-_reminder_channel = "sahjanand_reminders"
-
 # Cached state
 _credentials = None
 _project_id = None
@@ -149,15 +145,23 @@ async def send_push_notification(
     data: Optional[dict] = None,
 ) -> None:
     """
-    Send push notification to one or more FCM tokens using notification+data hybrid.
+    Send push notification to one or more FCM tokens using DATA-ONLY message.
     Uses the FCM HTTP v1 API (OAuth2 authenticated).
     
-    Strategy: notification+data hybrid for maximum delivery reliability.
-    - Top-level 'notification': ensures Android shows it even when app is killed
-      by aggressive OEMs (Xiaomi, Samsung, Oppo, Vivo, etc.)
-    - 'data' payload: Flutter background handler uses this to show custom
-      notification with reply actions when the handler fires
-    - android.priority=high + ttl=0s: immediate delivery, bypasses Doze mode
+    Strategy: DATA-ONLY message (no top-level 'notification' key).
+    
+    WHY data-only instead of notification+data hybrid:
+    - With notification+data hybrid, Android system auto-shows a basic notification
+      when the app is in background/killed. Then our Flutter background handler ALSO
+      fires and shows a second (custom) notification → DUPLICATE notifications.
+    - With data-only messages, the Flutter background handler is ALWAYS called
+      (foreground, background, killed) and WE control the notification display.
+    - android.priority=HIGH ensures FCM wakes the device even in Doze mode.
+    - ttl=0s means deliver immediately or discard (no stale notifications).
+    
+    On aggressive OEM phones (Xiaomi, Samsung, Oppo, Vivo):
+    - Battery optimization exemption + high priority FCM should deliver.
+    - The Flutter app also schedules local alarms as backup for reminders.
     """
     access_token = _get_access_token()
     if not access_token:
@@ -179,40 +183,24 @@ async def send_push_notification(
     str_data = {k: str(v) for k, v in (data or {}).items()}
     str_data["title"] = title
     str_data["body"] = body
+    # Add timestamp so client can detect stale messages
+    str_data["sent_at"] = str(int(datetime.datetime.utcnow().timestamp()))
 
     invalid_tokens = []
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         for token in tokens:
-            # Use notification+data hybrid for maximum delivery reliability.
-            # - Top-level notification: ensures Android shows it even if app is killed
-            #   by aggressive OEMs (Xiaomi, Samsung, Oppo, Vivo, etc.)
-            # - Data payload: Flutter background handler uses this to show our
-            #   custom notification with reply actions (replacing the auto-shown one)
-            # - android.priority=high + ttl=0s: immediate delivery, bypasses Doze
-            notification_type = str_data.get("type", "")
-            channel_id = _reminder_channel if notification_type in ("reminder", "reminder_alert") else _chat_channel
-
+            # DATA-ONLY message: no top-level 'notification' key.
+            # This ensures Flutter background handler ALWAYS fires and we control
+            # notification display (no duplicates from system auto-showing).
             message = {
                 "message": {
                     "token": token,
                     "data": str_data,
-                    "notification": {
-                        "title": title,
-                        "body": body,
-                    },
                     "android": {
                         "priority": "high",
                         "ttl": "0s",
                         "direct_boot_ok": True,
-                        "notification": {
-                            "channel_id": channel_id,
-                            "notification_priority": "PRIORITY_MAX",
-                            "visibility": "PUBLIC",
-                            "default_vibrate_timings": False,
-                            "vibrate_timings": ["0s", "0.3s", "0.1s", "0.3s"] if notification_type == "chat" else ["0s", "1s", "0.5s", "1s", "0.5s", "1.5s"],
-                            "default_sound": True,
-                        },
                     },
                 }
             }
@@ -287,11 +275,15 @@ async def notify_new_chat_message(
     """Send push notification for new chat messages to all group members except sender."""
     target_ids = [uid for uid in recipient_user_ids if uid != sender_id]
     if not target_ids:
+        logger.debug(f"[Chat Push] No offline targets for group '{group_name}' (sender={sender_id})")
         return
 
     tokens = await get_multiple_users_fcm_tokens(target_ids, db)
     if not tokens:
+        logger.debug(f"[Chat Push] No FCM tokens for {len(target_ids)} offline users in '{group_name}'")
         return
+
+    logger.info(f"[Chat Push] Sending to {len(tokens)} tokens for {len(target_ids)} offline users in '{group_name}' (sender={sender_name})")
 
     # Build message body based on type
     if msg_type == "image":
@@ -325,7 +317,10 @@ async def notify_reminder_created(
 
     tokens = await get_multiple_users_fcm_tokens(target_user_ids, db)
     if not tokens:
+        logger.debug(f"[Reminder Push] No FCM tokens for {len(target_user_ids)} target users")
         return
+
+    logger.info(f"[Reminder Push] Sending 'created' notification to {len(tokens)} tokens — '{reminder_name}' by {creator_name}")
 
     await send_push_notification(
         tokens=tokens,
@@ -347,7 +342,10 @@ async def notify_reminder_due(
 
     tokens = await get_multiple_users_fcm_tokens(target_user_ids, db)
     if not tokens:
+        logger.debug(f"[Reminder Push] No FCM tokens for {len(target_user_ids)} target users (due alert)")
         return
+
+    logger.info(f"[Reminder Push] Sending DUE alert to {len(tokens)} tokens — '{reminder_name}'")
 
     await send_push_notification(
         tokens=tokens,
