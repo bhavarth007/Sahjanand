@@ -206,6 +206,16 @@ jobs:
           android.enableJetifier=true
           PROPS
           
+          # ── Write gradle-wrapper.properties with Gradle 8.x (required by AGP 8.1) ──
+          mkdir -p android/gradle/wrapper
+          cat > android/gradle/wrapper/gradle-wrapper.properties << 'WRAPPER'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-all.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          WRAPPER
+          
           # ── Write google-services.json placeholder ──
           cat > android/app/google-services.json << 'GSJSON'
           {
