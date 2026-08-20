@@ -219,6 +219,7 @@ async def send_push_notification(
             "sound": sound,
             "notification_priority": "PRIORITY_MAX",
             "default_vibrate_timings": True,
+            "visibility": "PUBLIC",
         },
     }
     if collapse_key:
@@ -432,13 +433,16 @@ async def notify_new_chat_message(
             "group_name": group_name,
             "group_id": str(group_id),
             "sender_id": str(sender_id),
-            "message_id": str(message_id),  # For delivery ACK
+            "message_id": str(message_id),  # For delivery ACK + deduplication
         },
-        # collapse_key groups by chat group — prevents FCM rate-limiting
-        # when many messages are sent rapidly in one group
-        collapse_key=f"chat_group_{group_id}",
-        # 1 hour TTL — message survives Doze mode and app-killed state
-        ttl_seconds=3600,
+        # NO collapse_key for chat messages — each message is individually important.
+        # collapse_key causes FCM to batch and delay delivery, and only deliver the LAST
+        # message when device wakes up. For WhatsApp-style delivery, every message must
+        # arrive as its own push.
+        collapse_key=None,
+        # 4 hours TTL — ensures message is queued long enough for locked/offline devices.
+        # FCM will deliver when device reconnects (up to TTL).
+        ttl_seconds=14400,
     )
 
     # NOTE: Topic notification removed — with hybrid notification+data approach,

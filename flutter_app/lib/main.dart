@@ -53,20 +53,24 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // CRITICAL: WidgetsFlutterBinding must be initialized FIRST in background isolate.
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await _initLocalNotificationsMinimal();
 
-  // Show notification
+  // IMPORTANT: With notification+data HYBRID messages, when the app is in
+  // background/killed state, Android OS ALREADY shows the notification from
+  // the 'notification' field automatically. We must NOT show a duplicate
+  // notification here. We only need to:
+  // 1. Send delivery ACK (so sender sees double-grey tick)
+  // 2. Cancel the system notification and show our own ONLY if we need
+  //    custom behavior (like reply action). But this risks not showing anything
+  //    if the isolate gets killed. So we let the system notification stand.
+  
   if (message.data.isNotEmpty) {
-    await _showSmartNotification(message.data);
     // Send delivery ACK to server — this triggers the double-grey tick for sender
     await _sendDeliveryAck(message.data);
-  } else if (message.notification != null) {
-    await _showSmartNotification({
-      'title': message.notification!.title ?? 'Sahjanand',
-      'body': message.notification!.body ?? '',
-      'type': 'chat',
-    });
   }
+  
+  // DO NOT call _showSmartNotification here — Android OS already showed the
+  // notification from the 'notification' field in the hybrid FCM message.
+  // Showing another one would create duplicates.
 }
 
 /// Send delivery acknowledgement to the server (message received on device).
@@ -165,9 +169,9 @@ Future<void> _alarmCallback() async {
             await prefs.remove(key);
           }
         }
-        // Also cleanup chat deduplication keys older than 10 minutes
-        if (key.startsWith('_chat_shown_')) {
-          await prefs.remove(key); // Always cleanup during alarm (they're short-lived)
+        // Cleanup chat deduplication keys (message_id based)
+        if (key.startsWith('_chat_msg_')) {
+          await prefs.remove(key); // Always cleanup during alarm — they're short-lived
         }
       }
     } else if (response.statusCode == 401) {
@@ -318,56 +322,43 @@ Future<void> _showSmartNotification(Map<String, dynamic> data) async {
   final title = data['title'] ?? 'Sahjanand';
   final body = data['body'] ?? '';
 
-  // Skip showing if notification is too old.
-  // With TTL up to 3600s on backend, messages might arrive with some delay
-  // when device was in Doze. Allow up to 10 minutes of staleness for chat,
-  // and don't skip reminder_alerts at all (they have their own short TTL).
+  // Skip showing if notification is too old (stale message from Doze wakeup).
+  // Allow up to 10 minutes for chat; don't skip reminder_alerts.
   final sentAt = int.tryParse(data['sent_at']?.toString() ?? '');
   if (sentAt != null && type != 'reminder_alert') {
     final age = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000 - sentAt;
     if (age > 600) return; // Skip notifications older than 10 minutes
   }
 
-  // Deduplication for chat messages — prevents showing duplicates when both
-  // individual token push AND topic push arrive for the same message.
+  // Deduplication for chat messages — use message_id as the unique key.
+  // This prevents duplicates when both individual token push AND topic push arrive.
   // Also prevents sender from seeing their own message via topic delivery.
   if (type == 'chat') {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Skip if this is the sender's own device (topic messages go to everyone)
+      // Skip if this is the sender's own device
       final senderId = data['sender_id']?.toString() ?? '';
-      final savedAuthToken = prefs.getString(_prefAuthToken) ?? '';
-      if (senderId.isNotEmpty && savedAuthToken.isNotEmpty) {
-        // We can't decode JWT in background isolate easily, so we use a
-        // simple approach: save the user's ID when we know it
-        final myUserId = prefs.getString('_my_user_id') ?? '';
-        if (myUserId.isNotEmpty && myUserId == senderId) return; // Own message
-      }
+      final myUserId = prefs.getString('_my_user_id') ?? '';
+      if (myUserId.isNotEmpty && myUserId == senderId) return; // Own message
 
-      // Deduplicate: use sent_at + group_id as unique message fingerprint
-      final groupId = data['group_id']?.toString() ?? '';
-      final msgSentAt = data['sent_at']?.toString() ?? '';
-      if (groupId.isNotEmpty && msgSentAt.isNotEmpty) {
-        final dedupeKey = '_chat_shown_${groupId}_$msgSentAt';
+      // Deduplicate using message_id (unique per message, reliable)
+      final messageId = data['message_id']?.toString() ?? '';
+      if (messageId.isNotEmpty) {
+        final dedupeKey = '_chat_msg_$messageId';
         final alreadyShown = prefs.getBool(dedupeKey) ?? false;
         if (alreadyShown) return; // Already shown this exact message
         await prefs.setBool(dedupeKey, true);
-
-        // Schedule cleanup of old dedupe keys (keep only last 5 min)
-        // We store the timestamp and clean during alarm callback
       }
     } catch (_) {}
   }
 
-  // Deduplication for reminder alerts (same mechanism as alarm callback)
-  // This prevents showing the same reminder twice if both FCM and alarm fire.
+  // Deduplication for reminder alerts
   if (type == 'reminder_alert') {
     try {
       final reminderTitle = data['title'] ?? '';
       if (reminderTitle.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
-        // Use a hash of the title as the dedupe key (reminder ID isn't in FCM payload)
         final dedupeKey = '_shown_reminder_fcm_${reminderTitle.hashCode}';
         final lastShown = prefs.getInt(dedupeKey) ?? 0;
         final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -415,6 +406,8 @@ Future<void> _showChatNotification(
     category: AndroidNotificationCategory.message,
     visibility: NotificationVisibility.public,
     styleInformation: BigTextStyleInformation(body, contentTitle: title),
+    // Group notifications by group_id so each group stacks separately
+    groupKey: 'chat_group_${data['group_id'] ?? '0'}',
     actions: <AndroidNotificationAction>[
       const AndroidNotificationAction(
         _replyActionId,
@@ -430,12 +423,16 @@ Future<void> _showChatNotification(
 
   final payload = jsonEncode(data);
 
-  // Use group_id as notification ID so each group shows only the latest message
-  // (like WhatsApp). Also prevents duplicate with system notification.
-  final groupId = int.tryParse(data['group_id']?.toString() ?? '') ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  // Use message_id as notification ID for uniqueness per message.
+  // This ensures each message shows its own notification and messages from
+  // different groups don't overwrite each other.
+  // Fallback to group_id if message_id is not available (older behavior).
+  final messageId = int.tryParse(data['message_id']?.toString() ?? '');
+  final groupId = int.tryParse(data['group_id']?.toString() ?? '');
+  final notifId = messageId ?? groupId ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
   await _localNotifications.show(
-    groupId,
+    notifId,
     title,
     body,
     NotificationDetails(android: androidDetails),
@@ -710,7 +707,7 @@ class _WebViewScreenState extends State<WebViewScreen>
     // With notification+data hybrid, when app is in foreground:
     // - System notification is suppressed (we set alert:false above)
     // - onMessage fires with both notification and data fields
-    // - We show our custom rich notification with reply action + in-app banner
+    // - We show a system tray notification via flutter_local_notifications
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       if (message.data.isEmpty && message.notification == null) return;
 
@@ -736,7 +733,7 @@ class _WebViewScreenState extends State<WebViewScreen>
       _sendDeliveryAck(data);
 
       // Show system tray notification (Android notification bar, like WhatsApp).
-      // No in-app banner — the message already appears in the chat via WebSocket.
+      // _showSmartNotification handles deduplication and self-message filtering.
       await _showSmartNotification(data);
     });
 
@@ -1414,7 +1411,7 @@ class _WebViewScreenState extends State<WebViewScreen>
       final prefs = await SharedPreferences.getInstance();
       final allKeys = prefs.getKeys().toList();
       for (final key in allKeys) {
-        if (key.startsWith('_chat_shown_')) {
+        if (key.startsWith('_chat_msg_') || key.startsWith('_chat_shown_')) {
           await prefs.remove(key);
         }
       }
