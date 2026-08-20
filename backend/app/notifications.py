@@ -396,23 +396,24 @@ async def notify_new_chat_message(
     
     Includes message_id in data payload so the receiving client can send a delivery
     acknowledgement back to the server (triggering the double-grey tick for the sender).
-    
-    Uses collapse_key per group so rapid messages don't get rate-limited by FCM.
-    TTL of 3600s (1 hour) ensures messages are queued and delivered even if the
-    device is in Doze mode or the app is killed — FCM will hold the message and
-    deliver it when the device next connects (up to 1 hour).
     """
     target_ids = [uid for uid in recipient_user_ids if uid != sender_id]
     if not target_ids:
-        logger.debug(f"[Chat Push] No offline targets for group '{group_name}' (sender={sender_id})")
+        logger.info(f"[Chat Push] No offline targets for group '{group_name}' (sender={sender_id})")
         return
 
     tokens = await get_multiple_users_fcm_tokens(target_ids, db)
     if not tokens:
-        logger.debug(f"[Chat Push] No FCM tokens for {len(target_ids)} offline users in '{group_name}'")
+        logger.warning(f"[Chat Push] No FCM tokens for {len(target_ids)} offline users in '{group_name}' — users: {target_ids}")
         return
 
-    logger.info(f"[Chat Push] Sending to {len(tokens)} tokens for {len(target_ids)} offline users in '{group_name}' (sender={sender_name})")
+    # Check if Firebase is configured
+    creds, project_id = _load_credentials()
+    if not creds or not project_id:
+        logger.error(f"[Chat Push] FIREBASE NOT CONFIGURED — cannot send push to {len(tokens)} tokens. Set FIREBASE_CREDENTIALS_JSON_CONTENT env var!")
+        return
+
+    logger.info(f"[Chat Push] Sending to {len(tokens)} tokens for {len(target_ids)} offline users in '{group_name}' (sender={sender_name}, msg_id={message_id})")
 
     # Build message body based on type
     if msg_type == "image":

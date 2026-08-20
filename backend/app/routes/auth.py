@@ -144,3 +144,105 @@ async def remove_fcm_token(
         )
     )
     return {"status": "removed"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FCM Diagnostics — check if push notifications are configured
+# ═══════════════════════════════════════════════════════════════
+@router.get("/fcm-status")
+async def fcm_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Diagnostic endpoint to check FCM configuration status.
+    Returns whether Firebase credentials are configured, tokens registered, etc.
+    """
+    from app.notifications import _load_credentials, get_user_fcm_tokens
+    from app.config import get_settings
+
+    settings = get_settings()
+
+    # Check Firebase credentials
+    creds, project_id = _load_credentials()
+    firebase_configured = creds is not None and project_id is not None
+
+    # Check if FIREBASE_CREDENTIALS_JSON_CONTENT is set
+    has_json_content = bool(settings.FIREBASE_CREDENTIALS_JSON_CONTENT)
+    has_json_file = bool(settings.FIREBASE_CREDENTIALS_JSON)
+
+    # Check user's FCM tokens
+    tokens = await get_user_fcm_tokens(current_user.id, db)
+
+    # Check total tokens in system
+    total_result = await db.execute(select(FcmToken))
+    total_tokens = len(total_result.all())
+
+    return {
+        "firebase_configured": firebase_configured,
+        "firebase_project_id": project_id or "NOT SET",
+        "credentials_source": "JSON_CONTENT env var" if has_json_content else ("JSON file" if has_json_file else "NOT CONFIGURED"),
+        "your_user_id": current_user.id,
+        "your_fcm_tokens_count": len(tokens),
+        "your_fcm_tokens_preview": [f"...{t[-12:]}" for t in tokens],
+        "total_fcm_tokens_in_db": total_tokens,
+        "status": "READY" if (firebase_configured and len(tokens) > 0) else "NOT READY",
+        "issues": _get_fcm_issues(firebase_configured, has_json_content, has_json_file, tokens),
+    }
+
+
+def _get_fcm_issues(firebase_configured, has_json_content, has_json_file, tokens):
+    """List issues preventing FCM from working."""
+    issues = []
+    if not firebase_configured:
+        if not has_json_content and not has_json_file:
+            issues.append("FIREBASE_CREDENTIALS_JSON_CONTENT env var is not set on the server. You must set it to the Firebase service account JSON.")
+        elif has_json_file:
+            issues.append("FIREBASE_CREDENTIALS_JSON file path is set but the file might not exist or is invalid.")
+        else:
+            issues.append("Firebase credentials are set but failed to load (invalid JSON or missing project_id).")
+    if not tokens:
+        issues.append("No FCM device tokens registered for your account. The app must register its token after login.")
+    if not issues:
+        issues.append("None — FCM is fully configured and ready.")
+    return issues
+
+
+@router.post("/fcm-test")
+async def test_fcm_notification(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Send a test push notification to the current user's devices.
+    Use this to verify the entire FCM pipeline works.
+    """
+    from app.notifications import get_user_fcm_tokens, send_push_notification
+
+    tokens = await get_user_fcm_tokens(current_user.id, db)
+    if not tokens:
+        raise HTTPException(400, "No FCM tokens registered for your account. Open the app first to register.")
+
+    try:
+        await send_push_notification(
+            tokens=tokens,
+            title="Test Notification",
+            body=f"Hello {current_user.full_name or current_user.email}! FCM is working.",
+            data={
+                "type": "chat",
+                "group_id": "0",
+                "sender_id": "0",
+                "message_id": "0",
+            },
+        )
+        return {
+            "status": "sent",
+            "tokens_count": len(tokens),
+            "message": f"Test notification sent to {len(tokens)} device(s). Check your phone.",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to send test notification. Check server logs.",
+        }
