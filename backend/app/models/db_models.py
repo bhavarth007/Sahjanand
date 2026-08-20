@@ -225,12 +225,12 @@ class JobCard(Base):
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
 
-    user = relationship("User", back_populates="job_cards")
+    user = relationship("User", back_populates="job_cards", foreign_keys=[user_id])
     cancelled_by_user = relationship("User", foreign_keys=[cancelled_by])
 
 
 # Add relationship to User model - done via backref
-User.job_cards = relationship("JobCard", back_populates="user", cascade="all, delete-orphan")
+User.job_cards = relationship("JobCard", back_populates="user", foreign_keys=[JobCard.user_id], cascade="all, delete-orphan")
 
 
 class MessageDelivery(Base):
