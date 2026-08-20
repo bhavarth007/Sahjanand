@@ -90,11 +90,39 @@ async def health():
 @app.get("/health/notifications", tags=["Health"])
 async def notification_health():
     """Check if Firebase push notification credentials are configured."""
-    from app.notifications import _load_credentials
+    from app.notifications import _load_credentials, _get_access_token
     creds, project_id = _load_credentials()
     if creds and project_id:
-        return {"status": "ok", "project_id": project_id, "fcm": "configured"}
+        # Also verify we can get an access token (proves credentials are valid)
+        token = _get_access_token()
+        if token:
+            return {"status": "ok", "project_id": project_id, "fcm": "configured", "access_token": "valid"}
+        return {"status": "warning", "project_id": project_id, "fcm": "configured", "access_token": "failed_to_get"}
     return {"status": "error", "fcm": "not_configured", "detail": "Set FIREBASE_CREDENTIALS_JSON_CONTENT env var"}
+
+
+@app.get("/health/fcm-tokens", tags=["Health"])
+async def list_all_fcm_tokens():
+    """Debug endpoint: list all registered FCM tokens (truncated for security)."""
+    from app.database import AsyncSessionLocal
+    from sqlalchemy import select
+    from app.models.db_models import FcmToken, User
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(FcmToken.user_id, FcmToken.token, User.full_name)
+                .join(User, User.id == FcmToken.user_id)
+            )
+            rows = result.all()
+            return {
+                "total_tokens": len(rows),
+                "tokens": [
+                    {"user_id": r[0], "name": r[2], "token_preview": f"...{r[1][-20:]}"}
+                    for r in rows
+                ]
+            }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/api/config", tags=["Config"])

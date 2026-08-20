@@ -837,6 +837,9 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                         offline_member_ids = [uid for uid in member_ids if uid not in online_ids]
                         group = await db.get(ChatGroup, group_id)
                         group_name = group.name if group else "Group Chat"
+                        import logging
+                        _logger = logging.getLogger(__name__)
+                        _logger.info(f"[WS Push] group={group_id} members={member_ids} online={online_ids} offline={offline_member_ids}")
                         await notify_new_chat_message(
                             sender_name=user.full_name or user.email,
                             msg_type=msg_type,
@@ -848,8 +851,9 @@ async def chat_ws(websocket: WebSocket, token: str = Query(...), group_id: int =
                             group_id=group_id,
                             message_id=msg.id,
                         )
-                    except Exception:
-                        pass
+                    except Exception as push_err:
+                        import logging
+                        logging.getLogger(__name__).error(f"[WS Push] Error sending push: {push_err}")
 
                 await manager.broadcast(group_id, {
                     "event": "message", "id": msg.id, "group_id": group_id,
