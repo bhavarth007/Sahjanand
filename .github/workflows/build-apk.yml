@@ -34,6 +34,9 @@ jobs:
       - name: Create Android project and get deps
         working-directory: flutter_app
         run: |
+          # Save the real google-services.json before flutter create wipes android/
+          cp android/app/google-services.json /tmp/google-services.json
+          
           cp pubspec.yaml pubspec.yaml.bak
           flutter create --platforms android --org com.sahjanand --project-name sahjanand .
           cp pubspec.yaml.bak pubspec.yaml
@@ -41,6 +44,9 @@ jobs:
           # Copy native MainActivity with audio recording
           mkdir -p android/app/src/main/kotlin/com/sahjanand/sahjanand
           cp native/MainActivity.kt android/app/src/main/kotlin/com/sahjanand/sahjanand/MainActivity.kt
+          
+          # ── Restore the real google-services.json ──
+          cp /tmp/google-services.json android/app/google-services.json
           
           # ── Write complete AndroidManifest.xml (replaces generated one) ──
           cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST'
@@ -125,7 +131,7 @@ jobs:
                       android:value="2" />
                   <meta-data
                       android:name="com.google.firebase.messaging.default_notification_channel_id"
-                      android:value="sahjanand_reminders" />
+                      android:value="sahjanand_chat" />
                   <meta-data
                       android:name="com.google.firebase.messaging.default_notification_icon"
                       android:resource="@mipmap/ic_launcher" />
@@ -231,27 +237,6 @@ jobs:
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           WRAPPER
-          
-          # ── Write google-services.json placeholder ──
-          cat > android/app/google-services.json << 'GSJSON'
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "sahjanand-placeholder",
-              "storage_bucket": "sahjanand-placeholder.appspot.com"
-            },
-            "client": [{
-              "client_info": {
-                "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
-                "android_client_info": { "package_name": "com.sahjanand.sahjanand" }
-              },
-              "oauth_client": [],
-              "api_key": [{ "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }],
-              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
-            }],
-            "configuration_version": "1"
-          }
-          GSJSON
           
           # ── App icon ──
           cp assets/icon.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
