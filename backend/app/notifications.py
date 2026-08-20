@@ -91,16 +91,68 @@ def _get_access_token() -> Optional[str]:
         return None
 
     try:
-        # Use the standard google-auth refresh mechanism
-        # This handles JWT signing and token exchange internally
-        import google.auth.transport.requests
-        request = google.auth.transport.requests.Request()
-        creds.refresh(request)
-        
-        _access_token = creds.token
-        _token_expiry = creds.expiry or (datetime.datetime.utcnow() + datetime.timedelta(seconds=3600))
-        logger.info("FCM access token refreshed successfully")
-        return _access_token
+        # Use google-auth's built-in refresh with requests transport
+        # google.auth.transport.requests requires the 'requests' package
+        try:
+            import google.auth.transport.requests
+            request = google.auth.transport.requests.Request()
+            creds.refresh(request)
+            _access_token = creds.token
+            _token_expiry = creds.expiry or (datetime.datetime.utcnow() + datetime.timedelta(seconds=3600))
+            logger.info("FCM access token refreshed successfully via google-auth")
+            return _access_token
+        except Exception as e1:
+            logger.warning(f"google-auth refresh failed ({e1}), trying manual JWT exchange...")
+
+        # Fallback: Manual JWT assertion exchange using httpx
+        # This creates a signed JWT and exchanges it for an access token
+        import time
+        from google.auth import _helpers
+        from google.auth.crypt import RSASigner
+
+        # Build JWT claims
+        now = int(time.time())
+        payload_data = {
+            "iss": creds.service_account_email,
+            "sub": creds.service_account_email,
+            "aud": TOKEN_URL,
+            "iat": now,
+            "exp": now + 3600,
+            "scope": " ".join(creds.scopes or ["https://www.googleapis.com/auth/firebase.messaging"]),
+        }
+
+        # Sign the JWT
+        import json as json_module
+        header = {"alg": "RS256", "typ": "JWT"}
+        segments = [
+            _helpers.unpadded_urlsafe_b64encode(json_module.dumps(header).encode("utf-8")),
+            _helpers.unpadded_urlsafe_b64encode(json_module.dumps(payload_data).encode("utf-8")),
+        ]
+        signing_input = b".".join(segments)
+        signature = creds.signer.sign(signing_input)
+        segments.append(_helpers.unpadded_urlsafe_b64encode(signature))
+        assertion = b".".join(segments)
+
+        # Exchange JWT for access token
+        response = httpx.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion.decode("utf-8") if isinstance(assertion, bytes) else assertion,
+            },
+            timeout=15.0,
+        )
+
+        if response.status_code == 200:
+            token_data = response.json()
+            _access_token = token_data["access_token"]
+            expires_in = token_data.get("expires_in", 3600)
+            _token_expiry = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
+            logger.info("FCM access token refreshed successfully via manual JWT")
+            return _access_token
+        else:
+            logger.error(f"FCM token exchange failed: {response.status_code} {response.text[:300]}")
+            return None
     except Exception as e:
         logger.error(f"Failed to get FCM access token: {e}")
         return None
