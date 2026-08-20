@@ -79,13 +79,16 @@ async function loadJobCards() {
   // Determine status filter based on tab
   let statusFilter = '';
   if (jcCurrentTab === 'ALL') {
-    statusFilter = 'NEW,CANCELLED';
+    // Show ALL records regardless of status
+    statusFilter = '';
   } else {
     statusFilter = jcCurrentTab;
   }
 
   try {
-    const url = `${JC_API}/api/job-cards/?status=${statusFilter}&page=${jcCurrentPage}&page_size=5`;
+    const url = statusFilter
+      ? `${JC_API}/api/job-cards/?status=${statusFilter}&page=${jcCurrentPage}&page_size=5`
+      : `${JC_API}/api/job-cards/?page=${jcCurrentPage}&page_size=5`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       grid.innerHTML = '<div class="jc-empty">Failed to load job cards.</div>';
@@ -123,10 +126,15 @@ function renderJobCardList() {
 
     let actions = '';
     if (jcCurrentTab === 'ALL') {
-      actions = `
-        <button class="jc-btn-icon jc-btn-edit" onclick="event.stopPropagation();editJobCard(${c.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>
-        <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
-        <button class="jc-btn-accept" onclick="event.stopPropagation();acceptJobCard(${c.id})" title="Accept">Accept</button>`;
+      if (c.workflow_status === 'NEW' || c.workflow_status === 'CANCELLED') {
+        actions = `
+          <button class="jc-btn-icon jc-btn-edit" onclick="event.stopPropagation();editJobCard(${c.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>
+          <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+          <button class="jc-btn-accept" onclick="event.stopPropagation();acceptJobCard(${c.id})" title="Accept">Accept</button>`;
+      } else {
+        // Cards already in workflow — just show Open button
+        actions = `<button class="jc-btn-confirm" onclick="event.stopPropagation();openJobCardDetail(${c.id})" title="View Details">Open</button>`;
+      }
     } else if (jcCurrentTab === 'SUPERVISOR_CLEARANCE') {
       actions = `
         <button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'MANDING_DEPARTMENT')">Confirm</button>
@@ -141,6 +149,7 @@ function renderJobCardList() {
       actions = `<button class="jc-btn-confirm" onclick="event.stopPropagation();openBorderForm(${c.id})">Open Form</button>`;
     } else if (jcCurrentTab === 'FINAL') {
       actions = `
+        <button class="jc-btn-confirm" onclick="event.stopPropagation();openJobCardDetail(${c.id})" title="View Details">Open</button>
         <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
         <button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'COMPLETED')">Final Confirm</button>`;
     }
@@ -157,6 +166,19 @@ function renderJobCardList() {
       borderInfo = `<div class="jc-border-info">Job:${c.border_job_m}M | Work:${c.border_work_m}M | Lapet:${c.border_lapet_m}M | Cut:${c.border_total_cut_m}M</div>`;
     }
 
+    // Show confirmed_by info
+    let confirmedInfo = '';
+    if (c.confirmed_by_name && (jcCurrentTab === 'FINAL' || jcCurrentTab === 'ALL')) {
+      confirmedInfo = `<div class="jc-confirmed-badge"><i class="fa-solid fa-circle-check"></i> Confirmed by: ${esc(c.confirmed_by_name)}</div>`;
+    }
+
+    // Show workflow status badge in ALL tab
+    let statusBadge = '';
+    if (jcCurrentTab === 'ALL' && c.workflow_status !== 'NEW' && c.workflow_status !== 'CANCELLED') {
+      const stageLabels = {SUPERVISOR_CLEARANCE:'Supervisor',MANDING_DEPARTMENT:'Manding',BUTTA_CUTTING:'Butta Cutting',MILL:'Mill',BORDER:'Border',FINAL:'Final',COMPLETED:'Completed'};
+      statusBadge = `<span class="jc-status-badge jc-status-${c.workflow_status.toLowerCase()}">${stageLabels[c.workflow_status] || c.workflow_status}</span>`;
+    }
+
     return `
       <div class="jc-row ${isCancelled ? 'jc-row-cancelled' : ''}" ${jcCurrentTab === 'BORDER' ? `onclick="openBorderForm(${c.id})"` : ''}>
         <div class="jc-row-img">
@@ -166,7 +188,9 @@ function renderJobCardList() {
           <div class="jc-row-title">${esc(title)}</div>
           <div class="jc-row-sub">${esc(sub)}</div>
           ${date ? `<div class="jc-row-date"><i class="fa-regular fa-calendar"></i> ${esc(date)}</div>` : ''}
+          ${statusBadge}
           ${cancelInfo}
+          ${confirmedInfo}
           ${borderInfo}
         </div>
         <div class="jc-row-actions">${actions}</div>

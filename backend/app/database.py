@@ -86,6 +86,9 @@ async def init_db():
                     "cancelled_at": "TIMESTAMP WITH TIME ZONE",
                     "cancel_stage": "VARCHAR(30)",
                     "cancellation_history": "TEXT",
+                    "confirmed_by": "INTEGER",
+                    "confirmed_by_name": "VARCHAR(255)",
+                    "confirmed_at": "TIMESTAMP WITH TIME ZONE",
                 }
                 for col_name, col_type in new_cols.items():
                     if col_name not in cols:

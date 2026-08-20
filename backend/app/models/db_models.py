@@ -222,6 +222,11 @@ class JobCard(Base):
     # Full cancellation history stored as JSON: [{stage, reason, user_id, user_name, timestamp}]
     cancellation_history = Column(Text, nullable=True)
 
+    # ── Final confirmation tracking ──
+    confirmed_by       = Column(Integer, ForeignKey("users.id"), nullable=True)
+    confirmed_by_name  = Column(String(255), nullable=True)  # Denormalized for easy display
+    confirmed_at       = Column(DateTime(timezone=True), nullable=True)
+
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
 

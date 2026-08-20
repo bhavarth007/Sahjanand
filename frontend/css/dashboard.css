@@ -1889,3 +1889,33 @@ tbody tr:hover td { background: var(--bg-light); }
     font-size: .66rem;
   }
 }
+
+/* Confirmed by badge */
+.jc-confirmed-badge {
+  font-size: .7rem;
+  color: #2e7d32;
+  font-weight: 600;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Status badge in ALL tab */
+.jc-status-badge {
+  display: inline-block;
+  font-size: .62rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.jc-status-supervisor_clearance { background: #fff3e0; color: #e65100; }
+.jc-status-manding_department { background: #e3f2fd; color: #1565c0; }
+.jc-status-butta_cutting { background: #f3e5f5; color: #7b1fa2; }
+.jc-status-mill { background: #e8f5e9; color: #2e7d32; }
+.jc-status-border { background: #fce4ec; color: #c62828; }
+.jc-status-final { background: #e0f7fa; color: #00695c; }
+.jc-status-completed { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }

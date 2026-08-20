@@ -129,6 +129,9 @@ class JobCardOut(BaseModel):
     cancel_stage: Optional[str] = None
     cancelled_at: Optional[datetime] = None
     cancellation_history: Optional[str] = None
+    # Final confirmation
+    confirmed_by_name: Optional[str] = None
+    confirmed_at: Optional[datetime] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -370,6 +373,12 @@ async def transition_job_card(
         card.cancelled_at = None
         card.cancelled_by = None
         # Keep cancellation_history — it's append-only
+
+    # If finalizing (FINAL → COMPLETED), save who confirmed it
+    if current == "FINAL" and target == "COMPLETED":
+        card.confirmed_by = current_user.id
+        card.confirmed_by_name = current_user.full_name or current_user.email
+        card.confirmed_at = datetime.now(timezone.utc)
 
     card.workflow_status = target
     await db.flush()
