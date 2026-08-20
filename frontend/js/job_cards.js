@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   job_cards.js — Job Card Voucher CRUD
+   job_cards.js — Job Card Voucher CRUD + Workflow Management
    ═══════════════════════════════════════════════════════════════ */
 ;(function() {
 'use strict';
@@ -8,6 +8,10 @@ const JC_API = (typeof window.API !== 'undefined') ? window.API : (window.locati
 let jcLoaded = false;
 let jcCards = [];
 let jcEditingId = null;
+let jcCurrentTab = 'ALL';
+let jcCurrentPage = 1;
+let jcTotalPages = 1;
+let jcProcessing = false; // prevent double-clicks
 
 // Fixed CMP TYPE rows for Program Matching
 const CMP_TYPES = ['BEAM & COLOR', 'FDR-1', 'FDR-2', 'FDR-3', 'FDR-4', 'FDR-5', 'FDR-6', 'FDR-7', 'FDR-8'];
@@ -15,55 +19,375 @@ const CMP_TYPES = ['BEAM & COLOR', 'FDR-1', 'FDR-2', 'FDR-3', 'FDR-4', 'FDR-5', 
 // Simple text fields to save
 const JC_FIELDS = ['job_name','j_card_no','jc_date','quality','design_no','g_pick','repeat_mtr','repeat_pcs','start_date','end_date','op_name','remark','supervisor_sign'];
 
+// Tab labels for display
+const TAB_LABELS = {
+  'ALL': 'All Job Cards',
+  'SUPERVISOR_CLEARANCE': 'Supervisor Clearance',
+  'MANDING_DEPARTMENT': 'Manding Department',
+  'BUTTA_CUTTING': 'Butta Cutting',
+  'MILL': 'Mill',
+  'BORDER': 'Border',
+  'FINAL': 'Final Job Cards',
+};
+
+// ═══════════════════════════════════════════════════════════════
+// INITIALIZATION
+// ═══════════════════════════════════════════════════════════════
 function initJobCards() {
   if (jcLoaded) return;
   jcLoaded = true;
+  switchWorkflowTab('ALL');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WORKFLOW TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════
+function switchWorkflowTab(tab) {
+  jcCurrentTab = tab;
+  jcCurrentPage = 1;
+
+  // Update active tab styling
+  document.querySelectorAll('.jc-wf-tab').forEach(t => t.classList.remove('active'));
+  const activeBtn = document.querySelector(`.jc-wf-tab[data-wf="${tab}"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  // Update title
+  const titleEl = document.getElementById('jcTabTitle');
+  if (titleEl) titleEl.textContent = TAB_LABELS[tab] || tab;
+
+  // Show/hide New button (only on ALL tab)
+  const newBtn = document.getElementById('jcNewBtn');
+  if (newBtn) newBtn.style.display = (tab === 'ALL') ? '' : 'none';
+
+  // Hide forms
+  closeJobCardForm();
+  closeBorderForm();
+  closeCancelForm();
+
+  // Load data
   loadJobCards();
 }
 
+// ═══════════════════════════════════════════════════════════════
+// DATA LOADING (with pagination)
+// ═══════════════════════════════════════════════════════════════
 async function loadJobCards() {
   const token = localStorage.getItem('sahjanand_token');
   const grid = document.getElementById('jcCardGrid');
   if (!grid) return;
+
+  // Determine status filter based on tab
+  let statusFilter = '';
+  if (jcCurrentTab === 'ALL') {
+    statusFilter = 'NEW,CANCELLED';
+  } else {
+    statusFilter = jcCurrentTab;
+  }
+
   try {
-    const res = await fetch(`${JC_API}/api/job-cards/`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) { grid.innerHTML = '<div class="jc-empty">No job cards yet. Click "+ New Job Card" to create one.</div>'; return; }
-    jcCards = await res.json();
+    const url = `${JC_API}/api/job-cards/?status=${statusFilter}&page=${jcCurrentPage}&page_size=5`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      grid.innerHTML = '<div class="jc-empty">Failed to load job cards.</div>';
+      return;
+    }
+    const data = await res.json();
+    jcCards = data.items || [];
+    jcTotalPages = data.total_pages || 1;
     renderJobCardList();
+    renderPagination(data.total, data.page, data.total_pages);
   } catch (e) {
-    grid.innerHTML = '<div class="jc-empty">No job cards yet.</div>';
+    grid.innerHTML = '<div class="jc-empty">Error loading job cards.</div>';
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// RENDER JOB CARD LIST (per tab)
+// ═══════════════════════════════════════════════════════════════
 function renderJobCardList() {
   const grid = document.getElementById('jcCardGrid');
   if (!grid) return;
   if (!jcCards.length) {
-    grid.innerHTML = '<div class="jc-empty">No job cards yet. Click "+ New Job Card" to create one.</div>';
+    const emptyMsg = jcCurrentTab === 'ALL'
+      ? 'No job cards yet. Click "+ New Job Card" to create one.'
+      : `No job cards in ${TAB_LABELS[jcCurrentTab] || jcCurrentTab}.`;
+    grid.innerHTML = `<div class="jc-empty">${emptyMsg}</div>`;
     return;
   }
-  grid.innerHTML = jcCards.map((c, i) => {
+
+  grid.innerHTML = jcCards.map(c => {
     const title = `${c.job_name || 'Job'} — J.CARD NO.: ${c.j_card_no || '—'}`;
     const sub = [c.quality, c.design_no].filter(Boolean).join(' | ');
     const date = c.jc_date || c.start_date || '';
+    const isCancelled = c.workflow_status === 'CANCELLED';
+
+    let actions = '';
+    if (jcCurrentTab === 'ALL') {
+      actions = `
+        <button class="jc-btn-icon jc-btn-edit" onclick="event.stopPropagation();editJobCard(${c.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>
+        <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        <button class="jc-btn-accept" onclick="event.stopPropagation();acceptJobCard(${c.id})" title="Accept">Accept</button>`;
+    } else if (jcCurrentTab === 'SUPERVISOR_CLEARANCE') {
+      actions = `
+        <button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'MANDING_DEPARTMENT')">Confirm</button>
+        <button class="jc-btn-cancel" onclick="event.stopPropagation();openCancelForm(${c.id})">Cancel</button>`;
+    } else if (jcCurrentTab === 'MANDING_DEPARTMENT') {
+      actions = `<button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'BUTTA_CUTTING')">Confirm</button>`;
+    } else if (jcCurrentTab === 'BUTTA_CUTTING') {
+      actions = `<button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'MILL')">Confirm</button>`;
+    } else if (jcCurrentTab === 'MILL') {
+      actions = `<button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'BORDER')">Confirm</button>`;
+    } else if (jcCurrentTab === 'BORDER') {
+      actions = `<button class="jc-btn-confirm" onclick="event.stopPropagation();openBorderForm(${c.id})">Open Form</button>`;
+    } else if (jcCurrentTab === 'FINAL') {
+      actions = `
+        <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        <button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'COMPLETED')">Final Confirm</button>`;
+    }
+
+    // Cancellation info for ALL tab
+    let cancelInfo = '';
+    if (isCancelled && jcCurrentTab === 'ALL') {
+      cancelInfo = `<div class="jc-cancel-badge"><i class="fa-solid fa-ban"></i> Cancelled${c.cancel_reason ? ': ' + esc(c.cancel_reason.substring(0, 60)) : ''}</div>`;
+    }
+
+    // Border info for FINAL tab
+    let borderInfo = '';
+    if (jcCurrentTab === 'FINAL' && c.border_job_m) {
+      borderInfo = `<div class="jc-border-info">Job:${c.border_job_m}M | Work:${c.border_work_m}M | Lapet:${c.border_lapet_m}M | Cut:${c.border_total_cut_m}M</div>`;
+    }
+
     return `
-      <div class="jc-row" onclick="openJobCardDetail(${c.id})">
-        <div class="jc-row-num">${i + 1}</div>
+      <div class="jc-row ${isCancelled ? 'jc-row-cancelled' : ''}" ${jcCurrentTab === 'BORDER' ? `onclick="openBorderForm(${c.id})"` : ''}>
         <div class="jc-row-img">
-          ${c.image_url ? `<img src="${esc(c.image_url)}" alt="JC" />` : '<i class="fa-solid fa-image" style="color:#ccc;font-size:1.2rem;"></i>'}
+          ${c.image_url ? `<img src="${esc(c.image_url)}" alt="JC" />` : '<i class="fa-solid fa-image" style="color:#ccc;font-size:1rem;"></i>'}
         </div>
         <div class="jc-row-info">
           <div class="jc-row-title">${esc(title)}</div>
           <div class="jc-row-sub">${esc(sub)}</div>
           ${date ? `<div class="jc-row-date"><i class="fa-regular fa-calendar"></i> ${esc(date)}</div>` : ''}
+          ${cancelInfo}
+          ${borderInfo}
         </div>
-        <div class="jc-row-actions">
-          <button class="jc-btn-edit" onclick="event.stopPropagation();editJobCard(${c.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>
-          <button class="jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
-        </div>
+        <div class="jc-row-actions">${actions}</div>
       </div>`;
   }).join('');
 }
+
+// ═══════════════════════════════════════════════════════════════
+// PAGINATION
+// ═══════════════════════════════════════════════════════════════
+function renderPagination(total, page, totalPages) {
+  const el = document.getElementById('jcPagination');
+  if (!el) return;
+  if (totalPages <= 1) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+
+  let html = '';
+  // Previous
+  html += `<button class="jc-page-btn" ${page <= 1 ? 'disabled' : ''} onclick="goToPage(${page - 1})">‹</button>`;
+  // Page numbers
+  for (let i = 1; i <= totalPages; i++) {
+    if (totalPages > 7 && i > 3 && i < totalPages - 2 && Math.abs(i - page) > 1) {
+      if (i === 4 || i === totalPages - 3) html += '<span class="jc-page-dots">…</span>';
+      continue;
+    }
+    html += `<button class="jc-page-btn ${i === page ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+  }
+  // Next
+  html += `<button class="jc-page-btn" ${page >= totalPages ? 'disabled' : ''} onclick="goToPage(${page + 1})">›</button>`;
+  el.innerHTML = html;
+}
+
+function goToPage(p) {
+  if (p < 1 || p > jcTotalPages) return;
+  jcCurrentPage = p;
+  loadJobCards();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WORKFLOW ACTIONS
+// ═══════════════════════════════════════════════════════════════
+
+// Accept (from ALL JOB CARDS → SUPERVISOR_CLEARANCE)
+async function acceptJobCard(id) {
+  if (jcProcessing) return;
+  if (!confirm('Are you sure you want to accept this Job Card?')) return;
+  jcProcessing = true;
+  try {
+    const token = localStorage.getItem('sahjanand_token');
+    const res = await fetch(`${JC_API}/api/job-cards/${id}/transition`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_status: 'SUPERVISOR_CLEARANCE' }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Failed to accept job card.');
+      return;
+    }
+    loadJobCards();
+  } catch (e) {
+    alert('Network error. Please try again.');
+  } finally {
+    jcProcessing = false;
+  }
+}
+
+// Generic confirm transition
+async function confirmTransition(id, targetStatus) {
+  if (jcProcessing) return;
+  const label = TAB_LABELS[targetStatus] || targetStatus;
+  const msg = targetStatus === 'COMPLETED'
+    ? 'Are you sure you want to finalize this Job Card? This cannot be undone.'
+    : `Confirm moving this Job Card to ${label}?`;
+  if (!confirm(msg)) return;
+  jcProcessing = true;
+  try {
+    const token = localStorage.getItem('sahjanand_token');
+    const res = await fetch(`${JC_API}/api/job-cards/${id}/transition`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_status: targetStatus }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Failed to transition job card.');
+      return;
+    }
+    loadJobCards();
+  } catch (e) {
+    alert('Network error. Please try again.');
+  } finally {
+    jcProcessing = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CANCELLATION
+// ═══════════════════════════════════════════════════════════════
+function openCancelForm(id) {
+  document.getElementById('jcCancelCardId').value = id;
+  document.getElementById('jcCancelReason').value = '';
+  document.getElementById('jcCancelPanel').style.display = 'block';
+  document.getElementById('jcCancelReason').focus();
+}
+
+function closeCancelForm() {
+  document.getElementById('jcCancelPanel').style.display = 'none';
+  document.getElementById('jcCancelCardId').value = '';
+  document.getElementById('jcCancelReason').value = '';
+}
+
+async function confirmCancellation() {
+  if (jcProcessing) return;
+  const id = document.getElementById('jcCancelCardId').value;
+  const reason = document.getElementById('jcCancelReason').value.trim();
+  if (!reason) { alert('Please enter a cancellation reason.'); return; }
+  if (!confirm('Are you sure you want to cancel this Job Card?')) return;
+
+  jcProcessing = true;
+  const btn = document.getElementById('jcCancelConfirmBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const token = localStorage.getItem('sahjanand_token');
+    const res = await fetch(`${JC_API}/api/job-cards/${id}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Failed to cancel job card.');
+      return;
+    }
+    closeCancelForm();
+    loadJobCards();
+  } catch (e) {
+    alert('Network error. Please try again.');
+  } finally {
+    jcProcessing = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BORDER FORM
+// ═══════════════════════════════════════════════════════════════
+function openBorderForm(id) {
+  const card = jcCards.find(c => c.id === id);
+  if (!card) return;
+
+  // Fill read-only info
+  document.getElementById('jcBorderJobName').textContent = card.job_name || '—';
+  document.getElementById('jcBorderCardNo').textContent = card.j_card_no || '—';
+  document.getElementById('jcBorderDate').textContent = card.jc_date || '—';
+  document.getElementById('jcBorderDesign').textContent = card.design_no || '—';
+
+  // Clear editable fields
+  ['job_m','work_m','lapet_m','blause_m','total_cut_m','rs_inch'].forEach(f => {
+    const el = document.getElementById('jcBorder_' + f);
+    if (el) el.value = '';
+  });
+  document.getElementById('jcBorder_description').value = '';
+  document.getElementById('jcBorderCardId').value = id;
+  document.getElementById('jcBorderPanel').style.display = 'block';
+}
+
+function closeBorderForm() {
+  document.getElementById('jcBorderPanel').style.display = 'none';
+  document.getElementById('jcBorderCardId').value = '';
+}
+
+async function confirmBorderForm() {
+  if (jcProcessing) return;
+  const id = document.getElementById('jcBorderCardId').value;
+  if (!id) return;
+
+  // Collect & validate
+  const fields = ['job_m','work_m','lapet_m','blause_m','total_cut_m','rs_inch'];
+  const body = {};
+  for (const f of fields) {
+    const el = document.getElementById('jcBorder_' + f);
+    const val = el ? el.value.trim() : '';
+    if (!val) { alert('Please fill all required fields.'); el && el.focus(); return; }
+    if (isNaN(parseFloat(val))) { alert(`"${el.previousElementSibling?.textContent || f}" must be a valid number.`); el.focus(); return; }
+    body['border_' + f] = val;
+  }
+  const desc = document.getElementById('jcBorder_description').value.trim();
+  if (!desc) { alert('Please fill the Description field.'); document.getElementById('jcBorder_description').focus(); return; }
+  body.border_description = desc;
+
+  if (!confirm('Are you sure you want to complete Border processing for this Job Card?')) return;
+
+  jcProcessing = true;
+  const btn = document.getElementById('jcBorderConfirmBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const token = localStorage.getItem('sahjanand_token');
+    const res = await fetch(`${JC_API}/api/job-cards/${id}/border`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Failed to save border data.');
+      return;
+    }
+    closeBorderForm();
+    loadJobCards();
+  } catch (e) {
+    alert('Network error. Please try again.');
+  } finally {
+    jcProcessing = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// JOB CARD CRUD (Create, Edit, Delete)
+// ═══════════════════════════════════════════════════════════════
 
 // ── Render Program Matching table ──
 function renderProgramTable(data) {
@@ -131,7 +455,6 @@ function collectTakaData() {
   document.querySelectorAll('#jcTakaBody tr').forEach((tr) => {
     const get = (k) => tr.querySelector(`[data-k="${k}"]`)?.value || '';
     const row = { taka_no: get('taka_no'), cut: get('cut'), pcs: get('pcs'), mtr: get('mtr'), weight: get('weight'), color: get('color'), remark: get('remark') };
-    // Only include non-empty rows
     if (Object.values(row).some(v => v.trim())) rows.push(row);
   });
   return rows;
@@ -146,14 +469,7 @@ async function getNextJCardNo() {
       return data.next_number || '1';
     }
   } catch (e) {}
-  // Fallback: compute from loaded cards
-  if (!jcCards.length) return '1';
-  let max = 0;
-  jcCards.forEach(c => {
-    const num = parseInt(c.j_card_no, 10);
-    if (!isNaN(num) && num > max) max = num;
-  });
-  return String(max + 1);
+  return '1';
 }
 
 async function openNewJobCard() {
@@ -161,13 +477,11 @@ async function openNewJobCard() {
   clearJobCardForm();
   renderProgramTable(null);
   renderTakaTable(null);
-  // Auto-generate J.Card No from backend
   const jcNoEl = document.getElementById('jc_j_card_no');
   if (jcNoEl) {
     jcNoEl.value = await getNextJCardNo();
     jcNoEl.readOnly = true;
   }
-  // Set today's date as default
   const today = new Date().toISOString().split('T')[0];
   const dateEl = document.getElementById('jc_jc_date');
   if (dateEl && !dateEl.value) dateEl.value = today;
@@ -186,14 +500,12 @@ function editJobCard(id) {
     const el = document.getElementById('jc_' + f);
     if (el) el.value = card[f] || '';
   });
-  // Make J.Card No readonly
   const jcNoEl = document.getElementById('jc_j_card_no');
   if (jcNoEl) jcNoEl.readOnly = true;
   document.getElementById('jcImageUrl').value = card.image_url || '';
   const preview = document.getElementById('jcImagePreview');
   preview.innerHTML = card.image_url ? `<img src="${esc(card.image_url)}" style="max-height:80px;border-radius:8px;" />` : '';
 
-  // Parse and render tables
   let pm = null, tk = null;
   try { pm = card.program_matching ? JSON.parse(card.program_matching) : null; } catch {}
   try { tk = card.taka_rows ? JSON.parse(card.taka_rows) : null; } catch {}
@@ -262,40 +574,69 @@ async function saveJobCard() {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
+    if (res.ok) {
+      closeJobCardForm();
+      loadJobCards();
+    } else {
       const err = await res.json().catch(() => ({}));
       alert(err.detail || 'Failed to save job card.');
-      return;
     }
-    closeJobCardForm();
-    jcLoaded = false;
-    initJobCards();
-  } catch {
+  } catch (e) {
     alert('Network error. Please try again.');
   }
 }
 
 async function deleteJobCard(id) {
-  if (!confirm('Delete this job card?')) return;
+  if (!confirm('Are you sure you want to delete this Job Card? This cannot be undone.')) return;
   const token = localStorage.getItem('sahjanand_token');
   try {
-    await fetch(`${JC_API}/api/job-cards/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    jcLoaded = false;
-    initJobCards();
-  } catch {}
+    const res = await fetch(`${JC_API}/api/job-cards/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      loadJobCards();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Failed to delete job card.');
+    }
+  } catch {
+    alert('Network error.');
+  }
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+// ═══════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
 
+// ═══════════════════════════════════════════════════════════════
+// EXPOSE GLOBALS
+// ═══════════════════════════════════════════════════════════════
 window.initJobCards = initJobCards;
+window.switchWorkflowTab = switchWorkflowTab;
+window.goToPage = goToPage;
 window.openNewJobCard = openNewJobCard;
 window.editJobCard = editJobCard;
 window.openJobCardDetail = openJobCardDetail;
 window.closeJobCardForm = closeJobCardForm;
-window.uploadJobCardImage = uploadJobCardImage;
-window.saveJobCard = saveJobCard;
 window.deleteJobCard = deleteJobCard;
+window.saveJobCard = saveJobCard;
+window.uploadJobCardImage = uploadJobCardImage;
 window.addTakaRow = addTakaRow;
 window.removeTakaRow = removeTakaRow;
+window.acceptJobCard = acceptJobCard;
+window.confirmTransition = confirmTransition;
+window.openCancelForm = openCancelForm;
+window.closeCancelForm = closeCancelForm;
+window.confirmCancellation = confirmCancellation;
+window.openBorderForm = openBorderForm;
+window.closeBorderForm = closeBorderForm;
+window.confirmBorderForm = confirmBorderForm;
 
 })();

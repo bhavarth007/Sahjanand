@@ -428,22 +428,32 @@
     <section class="section" id="section-samples">
       <div class="greeting-bar">
         <h2><i class="fa-solid fa-clipboard-list" style="color:var(--primary);margin-right:8px;"></i>Job Card Voucher</h2>
-        <p>Manage production job cards for Ghanshyam Synthetics.</p>
+        <p>Manage production job cards — workflow tracking for Ghanshyam Synthetics.</p>
       </div>
 
-      <!-- Header with New button -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-        <h3 style="margin:0;font-size:1rem;font-weight:700;">All Job Cards</h3>
-        <button class="btn-primary" onclick="openNewJobCard()">
+      <!-- ── WORKFLOW TABS ── -->
+      <div class="jc-workflow-tabs" id="jcWorkflowTabs">
+        <button class="jc-wf-tab active" data-wf="ALL" onclick="switchWorkflowTab('ALL')">All Job Cards</button>
+        <button class="jc-wf-tab" data-wf="SUPERVISOR_CLEARANCE" onclick="switchWorkflowTab('SUPERVISOR_CLEARANCE')">Supervisor Clearance</button>
+        <button class="jc-wf-tab" data-wf="MANDING_DEPARTMENT" onclick="switchWorkflowTab('MANDING_DEPARTMENT')">Manding Department</button>
+        <button class="jc-wf-tab" data-wf="BUTTA_CUTTING" onclick="switchWorkflowTab('BUTTA_CUTTING')">Butta Cutting</button>
+        <button class="jc-wf-tab" data-wf="MILL" onclick="switchWorkflowTab('MILL')">Mill</button>
+        <button class="jc-wf-tab" data-wf="BORDER" onclick="switchWorkflowTab('BORDER')">Border</button>
+        <button class="jc-wf-tab" data-wf="FINAL" onclick="switchWorkflowTab('FINAL')">Final Job Cards</button>
+      </div>
+
+      <!-- ── TAB HEADER (title + New button for ALL tab) ── -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <h3 id="jcTabTitle" style="margin:0;font-size:1rem;font-weight:700;">All Job Cards</h3>
+        <button class="btn-primary" id="jcNewBtn" onclick="openNewJobCard()">
           <i class="fa-solid fa-plus"></i> New Job Card
         </button>
       </div>
 
-      <!-- Job Card Form (hidden by default) -->
+      <!-- ── JOB CARD CREATE/EDIT FORM (hidden by default) ── -->
       <div class="card" id="jcFormPanel" style="display:none;padding:24px;margin-bottom:20px;">
         <h4 id="jcFormTitle" style="margin:0 0 16px;font-weight:700;">New Job Card Voucher</h4>
 
-        <!-- Row 1: Job Name, J.Card No, JC Date -->
         <div class="jc-form-row jc-row-3col">
           <div class="jc-field">
             <label>Job Name</label>
@@ -459,7 +469,6 @@
           </div>
         </div>
 
-        <!-- Row 2: Quality, Design No, G.Pick -->
         <div class="jc-form-row jc-row-3col">
           <div class="jc-field">
             <label>Quality</label>
@@ -475,7 +484,6 @@
           </div>
         </div>
 
-        <!-- Row 3: Repeat MTR, Repeat PCS -->
         <div class="jc-form-row jc-row-2col">
           <div class="jc-field">
             <label>Repeat MTR</label>
@@ -505,7 +513,6 @@
           </div>
         </div>
 
-        <!-- Row: Start Date, End Date, OP Name -->
         <div class="jc-form-row jc-row-3col" style="margin-top:16px;">
           <div class="jc-field">
             <label>Start Date</label>
@@ -521,7 +528,6 @@
           </div>
         </div>
 
-        <!-- Row: Remark, Supervisor Sign -->
         <div class="jc-form-row jc-row-2col">
           <div class="jc-field">
             <label>Remark</label>
@@ -558,7 +564,7 @@
           </div>
         </div>
 
-        <!-- Image Upload (Required) -->
+        <!-- Image Upload -->
         <div class="jc-upload-area">
           <label>Job Card Image <span style="color:var(--primary);">*</span> (Required)</label>
           <div class="jc-upload-row">
@@ -571,17 +577,102 @@
           </div>
         </div>
 
-        <!-- Action buttons -->
         <div class="jc-form-actions">
           <button class="btn-secondary" onclick="closeJobCardForm()">Cancel</button>
           <button class="btn-primary" onclick="saveJobCard()"><i class="fa-solid fa-check"></i> Save Job Card</button>
         </div>
       </div>
 
-      <!-- Job Card List -->
+      <!-- ── BORDER FORM (hidden, shown when clicking a card in Border tab) ── -->
+      <div class="card" id="jcBorderPanel" style="display:none;padding:24px;margin-bottom:20px;">
+        <h4 style="margin:0 0 16px;font-weight:700;"><i class="fa-solid fa-border-all" style="color:var(--primary);margin-right:6px;"></i>Border Processing</h4>
+
+        <!-- Read-only job card info -->
+        <div class="jc-form-row jc-row-4col" style="margin-bottom:16px;padding:12px;background:#f9f5f3;border-radius:8px;">
+          <div class="jc-field">
+            <label style="font-size:.7rem;color:var(--text-muted);">Job Name</label>
+            <div id="jcBorderJobName" style="font-weight:600;font-size:.85rem;">—</div>
+          </div>
+          <div class="jc-field">
+            <label style="font-size:.7rem;color:var(--text-muted);">J.Card No.</label>
+            <div id="jcBorderCardNo" style="font-weight:600;font-size:.85rem;">—</div>
+          </div>
+          <div class="jc-field">
+            <label style="font-size:.7rem;color:var(--text-muted);">J.C Date</label>
+            <div id="jcBorderDate" style="font-weight:600;font-size:.85rem;">—</div>
+          </div>
+          <div class="jc-field">
+            <label style="font-size:.7rem;color:var(--text-muted);">Design No.</label>
+            <div id="jcBorderDesign" style="font-weight:600;font-size:.85rem;">—</div>
+          </div>
+        </div>
+
+        <!-- Editable border fields -->
+        <div class="jc-form-row jc-row-3col">
+          <div class="jc-field">
+            <label>Job (M) <span style="color:var(--primary);">*</span></label>
+            <input type="number" step="any" id="jcBorder_job_m" placeholder="0" />
+          </div>
+          <div class="jc-field">
+            <label>Work (M) <span style="color:var(--primary);">*</span></label>
+            <input type="number" step="any" id="jcBorder_work_m" placeholder="0" />
+          </div>
+          <div class="jc-field">
+            <label>Lapet (M) <span style="color:var(--primary);">*</span></label>
+            <input type="number" step="any" id="jcBorder_lapet_m" placeholder="0" />
+          </div>
+        </div>
+        <div class="jc-form-row jc-row-3col">
+          <div class="jc-field">
+            <label>Blause (M) <span style="color:var(--primary);">*</span></label>
+            <input type="number" step="any" id="jcBorder_blause_m" placeholder="0" />
+          </div>
+          <div class="jc-field">
+            <label>Total Cut (M) <span style="color:var(--primary);">*</span></label>
+            <input type="number" step="any" id="jcBorder_total_cut_m" placeholder="0" />
+          </div>
+          <div class="jc-field">
+            <label>R.S. (inch) <span style="color:var(--primary);">*</span></label>
+            <input type="number" step="any" id="jcBorder_rs_inch" placeholder="0" />
+          </div>
+        </div>
+        <div class="jc-form-row">
+          <div class="jc-field" style="flex:1;">
+            <label>Description <span style="color:var(--primary);">*</span></label>
+            <textarea id="jcBorder_description" rows="2" placeholder="Enter border description..." style="resize:vertical;width:100%;"></textarea>
+          </div>
+        </div>
+
+        <input type="hidden" id="jcBorderCardId" value="" />
+        <div class="jc-form-actions">
+          <button class="btn-secondary" onclick="closeBorderForm()">Cancel</button>
+          <button class="btn-primary" id="jcBorderConfirmBtn" onclick="confirmBorderForm()"><i class="fa-solid fa-check"></i> Confirm</button>
+        </div>
+      </div>
+
+      <!-- ── CANCEL FORM (shown when cancelling from Supervisor Clearance) ── -->
+      <div class="card" id="jcCancelPanel" style="display:none;padding:24px;margin-bottom:20px;border-left:4px solid var(--primary);">
+        <h4 style="margin:0 0 12px;font-weight:700;color:var(--primary);"><i class="fa-solid fa-ban" style="margin-right:6px;"></i>Cancel Job Card</h4>
+        <p style="margin:0 0 12px;font-size:.82rem;color:var(--text-secondary);">Please provide a reason for cancellation. This is required.</p>
+        <div class="jc-field">
+          <label>Cancellation Reason <span style="color:var(--primary);">*</span></label>
+          <textarea id="jcCancelReason" rows="3" placeholder="Enter the reason for cancellation..." style="resize:vertical;width:100%;"></textarea>
+        </div>
+        <input type="hidden" id="jcCancelCardId" value="" />
+        <div class="jc-form-actions" style="margin-top:12px;">
+          <button class="btn-secondary" onclick="closeCancelForm()">Close</button>
+          <button class="btn-primary" style="background:var(--primary);" id="jcCancelConfirmBtn" onclick="confirmCancellation()"><i class="fa-solid fa-ban"></i> Confirm Cancellation</button>
+        </div>
+      </div>
+
+      <!-- ── JOB CARD LIST (rendered by JS) ── -->
       <div id="jcCardGrid">
         <div class="jc-empty">Loading job cards...</div>
       </div>
+
+      <!-- ── PAGINATION ── -->
+      <div class="jc-pagination" id="jcPagination" style="display:none;"></div>
+
     </section>
 
     <!-- ════════ PROFILE ════════ -->

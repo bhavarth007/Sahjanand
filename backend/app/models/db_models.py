@@ -162,6 +162,7 @@ class GroupReminder(Base):
 class JobCard(Base):
     """
     Job Card Voucher — production tracking for textile manufacturing.
+    Workflow: NEW → SUPERVISOR_CLEARANCE → MANDING_DEPARTMENT → BUTTA_CUTTING → MILL → BORDER → FINAL → COMPLETED
     """
     __tablename__ = "job_cards"
 
@@ -198,10 +199,34 @@ class JobCard(Base):
     # Image (required for saving)
     image_url       = Column(String(500), nullable=True)     # Uploaded image URL
 
+    # ── Workflow status ──
+    # Tracks which stage this job card is currently at
+    workflow_status  = Column(String(30), default="NEW", nullable=False)
+    # Valid values: NEW, SUPERVISOR_CLEARANCE, MANDING_DEPARTMENT,
+    #              BUTTA_CUTTING, MILL, BORDER, FINAL, COMPLETED, CANCELLED
+
+    # ── Border stage fields (filled when job card reaches Border) ──
+    border_job_m       = Column(String(50), nullable=True)
+    border_work_m      = Column(String(50), nullable=True)
+    border_lapet_m     = Column(String(50), nullable=True)
+    border_blause_m    = Column(String(50), nullable=True)
+    border_total_cut_m = Column(String(50), nullable=True)
+    border_rs_inch     = Column(String(50), nullable=True)
+    border_description = Column(Text, nullable=True)
+
+    # ── Cancellation tracking ──
+    cancel_reason      = Column(Text, nullable=True)         # Latest cancellation reason
+    cancelled_by       = Column(Integer, ForeignKey("users.id"), nullable=True)
+    cancelled_at       = Column(DateTime(timezone=True), nullable=True)
+    cancel_stage       = Column(String(30), nullable=True)   # Stage where cancellation happened
+    # Full cancellation history stored as JSON: [{stage, reason, user_id, user_name, timestamp}]
+    cancellation_history = Column(Text, nullable=True)
+
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="job_cards")
+    cancelled_by_user = relationship("User", foreign_keys=[cancelled_by])
 
 
 # Add relationship to User model - done via backref

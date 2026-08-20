@@ -65,6 +65,38 @@ async def init_db():
         await conn.run_sync(_check_and_drop)
         await conn.run_sync(Base.metadata.create_all)
 
+    # Auto-migrate: add new columns to existing tables if they don't exist
+    # (create_all only creates new tables, not new columns on existing ones)
+    async with engine.begin() as conn:
+        def _add_missing_columns(sync_conn):
+            insp = sa_inspect(sync_conn)
+            if insp.has_table("job_cards"):
+                cols = [c["name"] for c in insp.get_columns("job_cards")]
+                new_cols = {
+                    "workflow_status": "VARCHAR(30) NOT NULL DEFAULT 'NEW'",
+                    "border_job_m": "VARCHAR(50)",
+                    "border_work_m": "VARCHAR(50)",
+                    "border_lapet_m": "VARCHAR(50)",
+                    "border_blause_m": "VARCHAR(50)",
+                    "border_total_cut_m": "VARCHAR(50)",
+                    "border_rs_inch": "VARCHAR(50)",
+                    "border_description": "TEXT",
+                    "cancel_reason": "TEXT",
+                    "cancelled_by": "INTEGER",
+                    "cancelled_at": "TIMESTAMP WITH TIME ZONE",
+                    "cancel_stage": "VARCHAR(30)",
+                    "cancellation_history": "TEXT",
+                }
+                for col_name, col_type in new_cols.items():
+                    if col_name not in cols:
+                        try:
+                            sync_conn.execute(text(f"ALTER TABLE job_cards ADD COLUMN {col_name} {col_type}"))
+                            print(f"  ✅ Added column job_cards.{col_name}")
+                        except Exception as e:
+                            print(f"  ⚠️ Column job_cards.{col_name}: {e}")
+
+        await conn.run_sync(_add_missing_columns)
+
     db_type = "SQLite (local dev)" if "sqlite" in db_url else "PostgreSQL (production)"
     print(f"✅ Database connected [{db_type}] — tables ready.")
 
