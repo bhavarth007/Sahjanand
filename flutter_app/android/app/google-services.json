@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "000000000000",
-    "project_id": "sahjanand-placeholder",
-    "storage_bucket": "sahjanand-placeholder.appspot.com"
+    "project_number": "129499330872",
+    "project_id": "sahjanand",
+    "storage_bucket": "sahjanand.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "mobilesdk_app_id": "1:129499330872:android:04e2b2cb31fb8b746729cd",
         "android_client_info": {
           "package_name": "com.sahjanand.sahjanand"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          "current_key": "AIzaSyCPZEXcWGs180TxokVfb5FvqCuQoFkhjRU"
         }
       ],
       "services": {
