@@ -443,11 +443,21 @@
       </div>
 
       <!-- ── TAB HEADER (title + New button for ALL tab) ── -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:10px;">
         <h3 id="jcTabTitle" style="margin:0;font-size:1rem;font-weight:700;">All Job Cards</h3>
         <button class="btn-primary" id="jcNewBtn" onclick="openNewJobCard()">
           <i class="fa-solid fa-plus"></i> New Job Card
         </button>
+      </div>
+
+      <!-- ── FILTERS ── -->
+      <div class="jc-filters" id="jcFilters">
+        <input type="text" id="jcSearchInput" class="jc-search-input" placeholder="Search design no, job card no, quality..." oninput="onJcSearch()" />
+        <div class="jc-status-filters" id="jcStatusFilters">
+          <button class="jc-sf-btn active" data-sf="ALL" onclick="setStatusFilter('ALL')">All Records</button>
+          <button class="jc-sf-btn" data-sf="COMPLETED" onclick="setStatusFilter('COMPLETED')">Completed</button>
+          <button class="jc-sf-btn" data-sf="PENDING" onclick="setStatusFilter('PENDING')">Pending</button>
+        </div>
       </div>
 
       <!-- ── JOB CARD CREATE/EDIT FORM (hidden by default) ── -->
@@ -672,6 +682,11 @@
 
       <!-- ── PAGINATION ── -->
       <div class="jc-pagination" id="jcPagination" style="display:none;"></div>
+
+      <!-- ── IMAGE PREVIEW MODAL ── -->
+      <div class="jc-img-modal" id="jcImageModal" style="display:none;" onclick="closeImageModal()">
+        <img id="jcImageModalImg" src="" alt="Job Card Image" />
+      </div>
 
     </section>
 

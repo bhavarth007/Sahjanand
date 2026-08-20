@@ -200,14 +200,15 @@ async def list_job_cards(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     status: Optional[str] = Query(None, description="Filter by workflow_status (comma-separated for multiple)"),
+    search: Optional[str] = Query(None, description="Search by design_no, j_card_no, job_name, or quality"),
     page: int = Query(1, ge=1),
     page_size: int = Query(5, ge=1, le=50),
 ):
     """
-    List job cards with pagination and optional status filter.
+    List job cards with pagination, status filter, and search.
     - status=NEW → only NEW cards
     - status=NEW,CANCELLED → NEW and CANCELLED cards
-    - No status → all cards
+    - search=SR-365 → matches design_no, j_card_no, job_name, or quality
     Sorted by created_at DESC (newest first).
     """
     query = select(JobCard).order_by(JobCard.created_at.desc())
@@ -217,6 +218,18 @@ async def list_job_cards(
         statuses = [s.strip().upper() for s in status.split(",")]
         query = query.where(JobCard.workflow_status.in_(statuses))
         count_query = count_query.where(JobCard.workflow_status.in_(statuses))
+
+    if search:
+        search_term = f"%{search.strip()}%"
+        from sqlalchemy import or_
+        search_filter = or_(
+            JobCard.design_no.ilike(search_term),
+            JobCard.j_card_no.ilike(search_term),
+            JobCard.job_name.ilike(search_term),
+            JobCard.quality.ilike(search_term),
+        )
+        query = query.where(search_filter)
+        count_query = count_query.where(search_filter)
 
     # Get total count
     total_result = await db.execute(count_query)

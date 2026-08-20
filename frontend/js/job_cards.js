@@ -12,6 +12,8 @@ let jcCurrentTab = 'ALL';
 let jcCurrentPage = 1;
 let jcTotalPages = 1;
 let jcProcessing = false; // prevent double-clicks
+let jcSearchTerm = '';
+let jcStatusFilter = 'ALL'; // ALL, COMPLETED, PENDING (for ALL tab only)
 
 // Fixed CMP TYPE rows for Program Matching
 const CMP_TYPES = ['BEAM & COLOR', 'FDR-1', 'FDR-2', 'FDR-3', 'FDR-4', 'FDR-5', 'FDR-6', 'FDR-7', 'FDR-8'];
@@ -45,6 +47,9 @@ function initJobCards() {
 function switchWorkflowTab(tab) {
   jcCurrentTab = tab;
   jcCurrentPage = 1;
+  jcSearchTerm = '';
+  const searchInput = document.getElementById('jcSearchInput');
+  if (searchInput) searchInput.value = '';
 
   // Update active tab styling
   document.querySelectorAll('.jc-wf-tab').forEach(t => t.classList.remove('active'));
@@ -59,10 +64,18 @@ function switchWorkflowTab(tab) {
   const newBtn = document.getElementById('jcNewBtn');
   if (newBtn) newBtn.style.display = (tab === 'ALL') ? '' : 'none';
 
+  // Show/hide status sub-filters (only on ALL tab)
+  const statusFilters = document.getElementById('jcStatusFilters');
+  if (statusFilters) statusFilters.style.display = (tab === 'ALL') ? 'flex' : 'none';
+
+  // Reset status filter when switching tabs
+  if (tab !== 'ALL') jcStatusFilter = 'ALL';
+
   // Hide forms
   closeJobCardForm();
   closeBorderForm();
   closeCancelForm();
+  closeReadOnlyView();
 
   // Load data
   loadJobCards();
@@ -79,16 +92,22 @@ async function loadJobCards() {
   // Determine status filter based on tab
   let statusFilter = '';
   if (jcCurrentTab === 'ALL') {
-    // Show ALL records regardless of status
-    statusFilter = '';
+    // Apply sub-filter
+    if (jcStatusFilter === 'COMPLETED') {
+      statusFilter = 'COMPLETED';
+    } else if (jcStatusFilter === 'PENDING') {
+      statusFilter = 'NEW,CANCELLED';
+    } else {
+      statusFilter = ''; // All records
+    }
   } else {
     statusFilter = jcCurrentTab;
   }
 
   try {
-    const url = statusFilter
-      ? `${JC_API}/api/job-cards/?status=${statusFilter}&page=${jcCurrentPage}&page_size=5`
-      : `${JC_API}/api/job-cards/?page=${jcCurrentPage}&page_size=5`;
+    let url = `${JC_API}/api/job-cards/?page=${jcCurrentPage}&page_size=5`;
+    if (statusFilter) url += `&status=${statusFilter}`;
+    if (jcSearchTerm) url += `&search=${encodeURIComponent(jcSearchTerm)}`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       grid.innerHTML = '<div class="jc-empty">Failed to load job cards.</div>';
@@ -119,8 +138,12 @@ function renderJobCardList() {
   }
 
   grid.innerHTML = jcCards.map(c => {
-    const title = `${c.job_name || 'Job'} — J.CARD NO.: ${c.j_card_no || '—'}`;
-    const sub = [c.quality, c.design_no].filter(Boolean).join(' | ');
+    const title = jcCurrentTab === 'FINAL'
+      ? `${c.design_no || '—'} — ${c.quality || '—'} — J.CARD NO.: ${c.j_card_no || '—'}`
+      : `${c.job_name || 'Job'} — J.CARD NO.: ${c.j_card_no || '—'}`;
+    const sub = jcCurrentTab === 'FINAL'
+      ? [c.job_name].filter(Boolean).join(' | ')
+      : [c.quality, c.design_no].filter(Boolean).join(' | ');
     const date = c.jc_date || c.start_date || '';
     const isCancelled = c.workflow_status === 'CANCELLED';
 
@@ -181,7 +204,7 @@ function renderJobCardList() {
 
     return `
       <div class="jc-row ${isCancelled ? 'jc-row-cancelled' : ''}" ${jcCurrentTab === 'BORDER' ? `onclick="openBorderForm(${c.id})"` : ''}>
-        <div class="jc-row-img">
+        <div class="jc-row-img" ${c.image_url ? `onclick="event.stopPropagation();openImageModal('${esc(c.image_url)}')" style="cursor:pointer;"` : ''}>
           ${c.image_url ? `<img src="${esc(c.image_url)}" alt="JC" />` : '<i class="fa-solid fa-image" style="color:#ccc;font-size:1rem;"></i>'}
         </div>
         <div class="jc-row-info">
@@ -537,7 +560,7 @@ function editJobCard(id) {
   renderTakaTable(tk);
 }
 
-function openJobCardDetail(id) { editJobCard(id); }
+function openJobCardDetail(id) { openReadOnlyView(id); }
 
 function closeJobCardForm() {
   document.getElementById('jcFormPanel').style.display = 'none';
@@ -630,6 +653,100 @@ async function deleteJobCard(id) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// SEARCH & STATUS FILTER
+// ═══════════════════════════════════════════════════════════════
+let _searchDebounce = null;
+function onJcSearch() {
+  clearTimeout(_searchDebounce);
+  _searchDebounce = setTimeout(() => {
+    jcSearchTerm = (document.getElementById('jcSearchInput')?.value || '').trim();
+    jcCurrentPage = 1;
+    loadJobCards();
+  }, 350);
+}
+
+function setStatusFilter(filter) {
+  jcStatusFilter = filter;
+  jcCurrentPage = 1;
+  document.querySelectorAll('.jc-sf-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.jc-sf-btn[data-sf="${filter}"]`);
+  if (btn) btn.classList.add('active');
+  loadJobCards();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// READ-ONLY VIEW (for Open button in FINAL/ALL/COMPLETED)
+// ═══════════════════════════════════════════════════════════════
+function openReadOnlyView(id) {
+  const card = jcCards.find(c => c.id === id);
+  if (!card) return;
+
+  // Reuse the form panel but make it read-only
+  jcEditingId = null;
+  document.getElementById('jcFormPanel').style.display = 'block';
+  document.getElementById('jcFormTitle').textContent = 'Job Card Details (Read Only)';
+
+  JC_FIELDS.forEach(f => {
+    const el = document.getElementById('jc_' + f);
+    if (el) { el.value = card[f] || ''; el.readOnly = true; el.disabled = true; }
+  });
+
+  document.getElementById('jcImageUrl').value = card.image_url || '';
+  const preview = document.getElementById('jcImagePreview');
+  preview.innerHTML = card.image_url
+    ? `<img src="${esc(card.image_url)}" style="max-height:80px;border-radius:8px;cursor:pointer;" onclick="openImageModal('${esc(card.image_url)}')" />`
+    : '';
+
+  let pm = null, tk = null;
+  try { pm = card.program_matching ? JSON.parse(card.program_matching) : null; } catch {}
+  try { tk = card.taka_rows ? JSON.parse(card.taka_rows) : null; } catch {}
+  renderProgramTable(pm);
+  renderTakaTable(tk);
+
+  // Disable all inputs in the form
+  document.querySelectorAll('#jcFormPanel input, #jcFormPanel textarea, #jcFormPanel select').forEach(el => {
+    el.readOnly = true;
+    el.disabled = true;
+  });
+
+  // Hide save/cancel buttons, show close button
+  const actionsEl = document.querySelector('#jcFormPanel .jc-form-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = `<button class="btn-secondary" onclick="closeReadOnlyView()">Close</button>`;
+  }
+}
+
+function closeReadOnlyView() {
+  document.getElementById('jcFormPanel').style.display = 'none';
+  // Re-enable all inputs for future edit use
+  document.querySelectorAll('#jcFormPanel input, #jcFormPanel textarea, #jcFormPanel select').forEach(el => {
+    el.readOnly = false;
+    el.disabled = false;
+  });
+  // Restore action buttons
+  const actionsEl = document.querySelector('#jcFormPanel .jc-form-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = `
+      <button class="btn-secondary" onclick="closeJobCardForm()">Cancel</button>
+      <button class="btn-primary" onclick="saveJobCard()"><i class="fa-solid fa-check"></i> Save Job Card</button>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMAGE MODAL
+// ═══════════════════════════════════════════════════════════════
+function openImageModal(url) {
+  if (!url) return;
+  document.getElementById('jcImageModalImg').src = url;
+  document.getElementById('jcImageModal').style.display = 'flex';
+}
+
+function closeImageModal() {
+  document.getElementById('jcImageModal').style.display = 'none';
+  document.getElementById('jcImageModalImg').src = '';
+}
+
+// ═══════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════
 function esc(s) {
@@ -662,5 +779,11 @@ window.confirmCancellation = confirmCancellation;
 window.openBorderForm = openBorderForm;
 window.closeBorderForm = closeBorderForm;
 window.confirmBorderForm = confirmBorderForm;
+window.onJcSearch = onJcSearch;
+window.setStatusFilter = setStatusFilter;
+window.openReadOnlyView = openReadOnlyView;
+window.closeReadOnlyView = closeReadOnlyView;
+window.openImageModal = openImageModal;
+window.closeImageModal = closeImageModal;
 
 })();
