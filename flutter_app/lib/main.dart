@@ -624,8 +624,6 @@ class _WebViewScreenState extends State<WebViewScreen>
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
   bool _isUploading = false;
-  String? _notifMessage;
-  Timer? _notifTimer;
 
   // Audio recorder using native MethodChannel (Kotlin MediaRecorder)
   String? _currentRecordingPath;
@@ -737,15 +735,9 @@ class _WebViewScreenState extends State<WebViewScreen>
       // Send delivery ACK (message received on this device)
       _sendDeliveryAck(data);
 
-      // Show our custom notification (system one is suppressed in foreground)
+      // Show system tray notification (Android notification bar, like WhatsApp).
+      // No in-app banner — the message already appears in the chat via WebSocket.
       await _showSmartNotification(data);
-
-      // Also show in-app banner
-      final title = data['title'] ?? '';
-      final body = data['body'] ?? '';
-      if (title.isNotEmpty || body.isNotEmpty) {
-        _showNotif(title, body, data['type'] ?? 'reminder');
-      }
     });
 
     // ─── Notification tap (app was in background) ───
@@ -1111,7 +1103,8 @@ class _WebViewScreenState extends State<WebViewScreen>
           await _toggleRecording();
           break;
         case 'notif':
-          _showNotif(d['s'] ?? '', d['t'] ?? '', d['m'] ?? 'text');
+          // No in-app banner — notifications show in Android system notification bar only.
+          // The chat UI already updates in real-time via WebSocket.
           break;
         case 'token':
           // Auth token changed in webview, save it
@@ -1361,35 +1354,6 @@ class _WebViewScreenState extends State<WebViewScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // IN-APP NOTIFICATIONS (banner at top)
-  // ═══════════════════════════════════════════════════════════════
-  void _showNotif(String sender, String text, String type) {
-    if (!mounted || sender.isEmpty) return;
-    String body;
-    switch (type) {
-      case 'image':
-        body = '\u{1f4f7} Photo';
-        break;
-      case 'video':
-        body = '\u{1f3ac} Video';
-        break;
-      case 'voice':
-        body = '\u{1f3a4} Voice note';
-        break;
-      default:
-        body = text.length > 50
-            ? '${text.substring(0, 50)}...'
-            : (text.isEmpty ? 'New message' : text);
-    }
-    setState(() => _notifMessage = '$sender: $body');
-    _notifTimer?.cancel();
-    _notifTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _notifMessage = null);
-    });
-    HapticFeedback.mediumImpact();
-  }
-
-  // ═══════════════════════════════════════════════════════════════
   // HELPERS
   // ═══════════════════════════════════════════════════════════════
   void _snack(String msg) {
@@ -1425,7 +1389,6 @@ class _WebViewScreenState extends State<WebViewScreen>
   @override
   void dispose() {
     _recordingTimer?.cancel();
-    _notifTimer?.cancel();
     _tokenRetryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -1545,49 +1508,12 @@ class _WebViewScreenState extends State<WebViewScreen>
                           child: CircularProgressIndicator(
                               color: Color(0xFFC8290C), strokeWidth: 3)),
                     ]))),
-          if (_notifMessage != null) _buildNotif(),
           if (_isRecording) _buildRecorder(),
           if (_isUploading) _buildUploading(),
         ])),
       ),
     );
   }
-
-  Widget _buildNotif() => Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Material(
-          elevation: 4,
-          child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
-              decoration: const BoxDecoration(
-                  color: Color(0xFF2D1B0E),
-                  borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(12),
-                      bottomRight: Radius.circular(12))),
-              child: Row(children: [
-                const CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Color(0xFFC8290C),
-                    child:
-                        Icon(Icons.chat, color: Colors.white, size: 18)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: Text(_notifMessage ?? '',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis)),
-                GestureDetector(
-                    onTap: () =>
-                        setState(() => _notifMessage = null),
-                    child: const Icon(Icons.close,
-                        color: Colors.white54, size: 20)),
-              ]))));
 
   Widget _buildRecorder() => Positioned(
       left: 0,
