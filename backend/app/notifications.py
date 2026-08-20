@@ -91,30 +91,16 @@ def _get_access_token() -> Optional[str]:
         return None
 
     try:
-        # Create JWT assertion and exchange for access token
-        # This uses google-auth's internal method to create the signed JWT
-        assertion = creds._make_authorization_grant_assertion()
-
-        # Exchange JWT assertion for access token using httpx (sync, quick call)
-        response = httpx.post(
-            TOKEN_URL,
-            data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                "assertion": assertion,
-            },
-            timeout=10.0,
-        )
-
-        if response.status_code == 200:
-            token_data = response.json()
-            _access_token = token_data["access_token"]
-            expires_in = token_data.get("expires_in", 3600)
-            _token_expiry = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
-            logger.info("FCM access token refreshed successfully")
-            return _access_token
-        else:
-            logger.error(f"Failed to get FCM access token: {response.status_code} {response.text[:200]}")
-            return None
+        # Use the standard google-auth refresh mechanism
+        # This handles JWT signing and token exchange internally
+        import google.auth.transport.requests
+        request = google.auth.transport.requests.Request()
+        creds.refresh(request)
+        
+        _access_token = creds.token
+        _token_expiry = creds.expiry or (datetime.datetime.utcnow() + datetime.timedelta(seconds=3600))
+        logger.info("FCM access token refreshed successfully")
+        return _access_token
     except Exception as e:
         logger.error(f"Failed to get FCM access token: {e}")
         return None
