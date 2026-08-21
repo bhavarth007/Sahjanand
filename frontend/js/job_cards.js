@@ -101,7 +101,8 @@ async function loadJobCards() {
     if (jcStatusFilter === 'COMPLETED') {
       statusFilter = 'COMPLETED';
     } else if (jcStatusFilter === 'PENDING') {
-      statusFilter = 'NEW,CANCELLED';
+      // Pending = everything except COMPLETED
+      statusFilter = 'NEW,CANCELLED,SUPERVISOR_CLEARANCE,MANDING_DEPARTMENT,BUTTA_CUTTING,MILL,BORDER,FINAL';
     } else {
       statusFilter = ''; // All records
     }
