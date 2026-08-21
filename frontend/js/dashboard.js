@@ -156,13 +156,23 @@ function applyAccessRights() {
     if (adminLabel) adminLabel.style.display  = '';
   }
 
-  // Hide sections user cannot access (admin always sees everything)
-  if (!userData.is_admin) {
+  // Owner (Ghanshyam) gets same access as admin for main sections
+  const isOwner = userData.designation && userData.designation.trim().toLowerCase() === 'owner';
+
+  // Hide sections user cannot access (admin and owner always see everything)
+  if (!userData.is_admin && !isOwner) {
     const accessMap = {
       sales:     userData.can_view_sales,
       reminders: userData.can_view_reminders,
       samples:   userData.can_view_samples,
     };
+
+    // Samples/Job Cards: only visible for Manager and Owner designations
+    const designation = (userData.designation || '').trim().toLowerCase();
+    const canSeeSamples = designation === 'manager' || designation === 'owner' || designation === 'sales manager';
+    if (!canSeeSamples) {
+      accessMap.samples = false;
+    }
 
     Object.entries(accessMap).forEach(([section, allowed]) => {
       if (allowed === false) {
@@ -215,8 +225,9 @@ const pageTitles = {
 };
 
 function showSection(id, el) {
-  // Enforce access control — non-admin users cannot access restricted sections
-  if (!userData.is_admin) {
+  // Enforce access control — non-admin/non-owner users cannot access restricted sections
+  const isOwner = userData.designation && userData.designation.trim().toLowerCase() === 'owner';
+  if (!userData.is_admin && !isOwner) {
     const accessMap = {
       sales:     userData.can_view_sales,
       reminders: userData.can_view_reminders,
@@ -667,7 +678,9 @@ async function loadRpReminderUsers() {
     const users = await res.json();
     // Non-admin users cannot see/select admin in the list
     const isAdmin = userData.is_admin;
-    const filteredUsers = isAdmin ? users : users.filter(u => !u.is_admin);
+    let filteredUsers = isAdmin ? users : users.filter(u => !u.is_admin);
+    // Exclude current user — cannot assign reminder to yourself
+    filteredUsers = filteredUsers.filter(u => u.id !== userData.id);
 
     container.innerHTML = `
       <div class="multi-select-dropdown" id="rpReminderToDropdown">

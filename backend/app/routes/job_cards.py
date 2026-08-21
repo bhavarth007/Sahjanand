@@ -221,13 +221,36 @@ async def list_job_cards(
 
     if search:
         search_term = f"%{search.strip()}%"
+        # Normalize date-like input: convert 21/08/26 → 2026-08-21, 21/08 → -08-21, etc.
+        raw = search.strip()
+        date_term = None
+        parts = raw.replace('-', '/').split('/')
+        if len(parts) == 3 and all(p.isdigit() for p in parts):
+            # Format: DD/MM/YY or DD/MM/YYYY
+            d, m, y = parts
+            if len(y) == 2: y = '20' + y
+            date_term = f"%{y}-{m.zfill(2)}-{d.zfill(2)}%"
+        elif len(parts) == 2 and all(p.isdigit() for p in parts):
+            # Format: DD/MM → search for -MM-DD
+            d, m = parts
+            date_term = f"%-{m.zfill(2)}-{d.zfill(2)}%"
+        elif raw.isdigit() and len(raw) <= 2:
+            # Just a day number like "21" → search for -21 in date
+            date_term = f"%-{raw.zfill(2)}%"
+
         from sqlalchemy import or_
-        search_filter = or_(
+        search_conditions = [
             JobCard.design_no.ilike(search_term),
             JobCard.j_card_no.ilike(search_term),
             JobCard.job_name.ilike(search_term),
             JobCard.quality.ilike(search_term),
-        )
+            JobCard.jc_date.ilike(search_term),
+        ]
+        if date_term:
+            search_conditions.append(JobCard.jc_date.ilike(date_term))
+            search_conditions.append(JobCard.start_date.ilike(date_term))
+
+        search_filter = or_(*search_conditions)
         query = query.where(search_filter)
         count_query = count_query.where(search_filter)
 

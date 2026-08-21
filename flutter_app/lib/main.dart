@@ -1003,14 +1003,12 @@ class _WebViewScreenState extends State<WebViewScreen>
           }
         } catch (_) {}
 
-        // If FCM token not yet registered, try now
-        if (!_fcmTokenRegistered) {
-          final fcmToken = prefs.getString(_prefFcmToken);
-          if (fcmToken != null) {
-            final success =
-                await _registerFcmTokenWithServer(fcmToken, token);
-            if (success) _fcmTokenRegistered = true;
-          }
+        // Always try to register FCM token when auth token is available
+        // (token may have changed, or backend may have lost it)
+        final fcmToken = prefs.getString(_prefFcmToken);
+        if (fcmToken != null && fcmToken.isNotEmpty) {
+          final success = await _registerFcmTokenWithServer(fcmToken, token);
+          if (success) _fcmTokenRegistered = true;
         }
 
         // Subscribe to group topics (updates subscriptions if groups changed)
@@ -1129,14 +1127,12 @@ class _WebViewScreenState extends State<WebViewScreen>
               }
             } catch (_) {}
 
-            // Re-register FCM token with new auth
-            if (!_fcmTokenRegistered) {
-              final fcmToken = prefs.getString(_prefFcmToken);
-              if (fcmToken != null) {
-                final success =
-                    await _registerFcmTokenWithServer(fcmToken, token);
-                if (success) _fcmTokenRegistered = true;
-              }
+            // Always re-register FCM token with new auth
+            final fcmToken = prefs.getString(_prefFcmToken);
+            if (fcmToken != null && fcmToken.isNotEmpty) {
+              final success =
+                  await _registerFcmTokenWithServer(fcmToken, token);
+              if (success) _fcmTokenRegistered = true;
             }
 
             // Re-subscribe to group topics with new auth
