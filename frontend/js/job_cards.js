@@ -45,6 +45,11 @@ function initJobCards() {
 // WORKFLOW TAB SWITCHING
 // ═══════════════════════════════════════════════════════════════
 function switchWorkflowTab(tab) {
+  // Warn if form is open with unsaved data
+  if (document.getElementById('jcFormPanel').style.display !== 'none' && jcEditingId !== null) {
+    if (!confirm('You have unsaved changes. Are you sure you want to switch tabs?')) return;
+  }
+
   jcCurrentTab = tab;
   jcCurrentPage = 1;
   jcSearchTerm = '';
@@ -253,7 +258,7 @@ function goToPage(p) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// WORKFLOW ACTIONS
+// WORKFLOW ACTIONS (with optimistic UI — instant visual feedback)
 // ═══════════════════════════════════════════════════════════════
 
 // Accept (from ALL JOB CARDS → SUPERVISOR_CLEARANCE)
@@ -261,6 +266,12 @@ async function acceptJobCard(id) {
   if (jcProcessing) return;
   if (!confirm('Are you sure you want to accept this Job Card?')) return;
   jcProcessing = true;
+
+  // Optimistic: instantly update local state and re-render
+  const card = jcCards.find(c => c.id === id);
+  if (card) card.workflow_status = 'SUPERVISOR_CLEARANCE';
+  renderJobCardList();
+
   try {
     const token = localStorage.getItem('sahjanand_token');
     const res = await fetch(`${JC_API}/api/job-cards/${id}/transition`, {
@@ -271,17 +282,20 @@ async function acceptJobCard(id) {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       alert(err.detail || 'Failed to accept job card.');
-      return;
+      // Revert
+      if (card) card.workflow_status = 'NEW';
+      renderJobCardList();
     }
-    loadJobCards();
   } catch (e) {
     alert('Network error. Please try again.');
+    if (card) card.workflow_status = 'NEW';
+    renderJobCardList();
   } finally {
     jcProcessing = false;
   }
 }
 
-// Generic confirm transition
+// Generic confirm transition (optimistic)
 async function confirmTransition(id, targetStatus) {
   if (jcProcessing) return;
   const label = TAB_LABELS[targetStatus] || targetStatus;
@@ -290,6 +304,12 @@ async function confirmTransition(id, targetStatus) {
     : `Confirm moving this Job Card to ${label}?`;
   if (!confirm(msg)) return;
   jcProcessing = true;
+
+  // Optimistic: instantly remove from current tab view
+  const cardIndex = jcCards.findIndex(c => c.id === id);
+  const removedCard = cardIndex >= 0 ? jcCards.splice(cardIndex, 1)[0] : null;
+  renderJobCardList();
+
   try {
     const token = localStorage.getItem('sahjanand_token');
     const res = await fetch(`${JC_API}/api/job-cards/${id}/transition`, {
@@ -300,11 +320,19 @@ async function confirmTransition(id, targetStatus) {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       alert(err.detail || 'Failed to transition job card.');
-      return;
+      // Revert: put card back
+      if (removedCard && cardIndex >= 0) {
+        jcCards.splice(cardIndex, 0, removedCard);
+        renderJobCardList();
+      }
     }
-    loadJobCards();
+    // No need to reload — card is already removed from view
   } catch (e) {
     alert('Network error. Please try again.');
+    if (removedCard && cardIndex >= 0) {
+      jcCards.splice(cardIndex, 0, removedCard);
+      renderJobCardList();
+    }
   } finally {
     jcProcessing = false;
   }
@@ -336,6 +364,13 @@ async function confirmCancellation() {
   jcProcessing = true;
   const btn = document.getElementById('jcCancelConfirmBtn');
   if (btn) btn.disabled = true;
+
+  // Optimistic: remove from current view immediately
+  const cardIndex = jcCards.findIndex(c => c.id == id);
+  const removedCard = cardIndex >= 0 ? jcCards.splice(cardIndex, 1)[0] : null;
+  closeCancelForm();
+  renderJobCardList();
+
   try {
     const token = localStorage.getItem('sahjanand_token');
     const res = await fetch(`${JC_API}/api/job-cards/${id}/cancel`, {
@@ -346,10 +381,12 @@ async function confirmCancellation() {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       alert(err.detail || 'Failed to cancel job card.');
-      return;
+      // Revert
+      if (removedCard && cardIndex >= 0) {
+        jcCards.splice(cardIndex, 0, removedCard);
+        renderJobCardList();
+      }
     }
-    closeCancelForm();
-    loadJobCards();
   } catch (e) {
     alert('Network error. Please try again.');
   } finally {
@@ -422,8 +459,11 @@ async function confirmBorderForm() {
       alert(err.detail || 'Failed to save border data.');
       return;
     }
+    // Optimistic: remove from current view
+    const cardIndex = jcCards.findIndex(c => c.id == id);
+    if (cardIndex >= 0) jcCards.splice(cardIndex, 1);
     closeBorderForm();
-    loadJobCards();
+    renderJobCardList();
   } catch (e) {
     alert('Network error. Please try again.');
   } finally {
@@ -635,20 +675,33 @@ async function saveJobCard() {
 
 async function deleteJobCard(id) {
   if (!confirm('Are you sure you want to delete this Job Card? This cannot be undone.')) return;
+  
+  // Optimistic: immediately remove from view
+  const cardIndex = jcCards.findIndex(c => c.id === id);
+  const removedCard = cardIndex >= 0 ? jcCards.splice(cardIndex, 1)[0] : null;
+  renderJobCardList();
+
   const token = localStorage.getItem('sahjanand_token');
   try {
     const res = await fetch(`${JC_API}/api/job-cards/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.ok) {
-      loadJobCards();
-    } else {
+    if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       alert(err.detail || 'Failed to delete job card.');
+      // Revert
+      if (removedCard && cardIndex >= 0) {
+        jcCards.splice(cardIndex, 0, removedCard);
+        renderJobCardList();
+      }
     }
   } catch {
     alert('Network error.');
+    if (removedCard && cardIndex >= 0) {
+      jcCards.splice(cardIndex, 0, removedCard);
+      renderJobCardList();
+    }
   }
 }
 

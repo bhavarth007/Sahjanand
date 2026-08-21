@@ -1297,21 +1297,30 @@ startGlobalReminderChecker();
 // ═══════════════════════════════════════════════════════════════
 function initTuneSelector() {
   const sel = document.getElementById('tuneSelector');
-  if (!sel) return;
+  const rpSel = document.getElementById('rpTuneSelector');
+  const savedTune = localStorage.getItem('sahjanand_alert_tune') || '1';
+
+  // Show tune selectors for admin users
   if (userData && userData.is_admin) {
-    sel.style.display = 'inline-flex';
-    sel.style.alignItems = 'center';
-    sel.style.gap = '4px';
-    const select = document.getElementById('alertTuneSelect');
-    if (select) select.value = localStorage.getItem('sahjanand_alert_tune') || '1';
+    if (sel) { sel.style.display = 'inline-flex'; sel.style.alignItems = 'center'; sel.style.gap = '4px'; }
+    if (rpSel) { rpSel.style.display = 'inline-flex'; rpSel.style.alignItems = 'center'; rpSel.style.gap = '4px'; }
   }
+
+  // Sync both dropdowns with saved value
+  const select1 = document.getElementById('alertTuneSelect');
+  const select2 = document.getElementById('rpAlertTuneSelect');
+  if (select1) select1.value = savedTune;
+  if (select2) select2.value = savedTune;
 }
 
 function setAlertTune(val) {
   localStorage.setItem('sahjanand_alert_tune', val);
-  // Save to server for all users via config endpoint (simple approach: store in localStorage for now)
-  // Admin sets it, all devices pick it up from the global checker response
-  // For simplicity: broadcast via a hidden field or keep it in localStorage (each device)
+  // Sync both dropdowns
+  const select1 = document.getElementById('alertTuneSelect');
+  const select2 = document.getElementById('rpAlertTuneSelect');
+  if (select1) select1.value = val;
+  if (select2) select2.value = val;
+  // Play preview
   playGlobalAlertSound();
 }
 window.setAlertTune = setAlertTune;
