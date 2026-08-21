@@ -246,8 +246,20 @@ function buildBubble(msg) {
     </div></div>`;
 }
 
-function appendMsg(msg, scroll) { if(!els.messages) return; hideEmpty(); els.messages.insertAdjacentHTML('beforeend', buildBubble(msg)); if(scroll) scrollBottom(); }
-function prependMsg(msg) { if(!els.messages) return; els.messages.insertAdjacentHTML('afterbegin', buildBubble(msg)); }
+function appendMsg(msg, scroll) {
+  if(!els.messages) return;
+  // Deduplication: skip if message with this ID already exists in DOM
+  if (msg.id && els.messages.querySelector(`[data-msg-id="${msg.id}"]`)) return;
+  hideEmpty();
+  els.messages.insertAdjacentHTML('beforeend', buildBubble(msg));
+  if(scroll) scrollBottom();
+}
+function prependMsg(msg) {
+  if(!els.messages) return;
+  // Deduplication: skip if already exists
+  if (msg.id && els.messages.querySelector(`[data-msg-id="${msg.id}"]`)) return;
+  els.messages.insertAdjacentHTML('afterbegin', buildBubble(msg));
+}
 function scrollBottom() { if(els.messages) els.messages.scrollTop = els.messages.scrollHeight; }
 function showEmpty() { if(els.messages && !els.messages.querySelector('.chat-empty')) els.messages.innerHTML = '<div class="chat-empty"><i class="fa-regular fa-comments"></i><p>No messages yet. Start the conversation!</p></div>'; }
 function hideEmpty() { const e = els.messages && els.messages.querySelector('.chat-empty'); if(e) e.remove(); }
