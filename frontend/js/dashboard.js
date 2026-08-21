@@ -167,13 +167,6 @@ function applyAccessRights() {
       samples:   userData.can_view_samples,
     };
 
-    // Samples/Job Cards: only visible for Manager and Owner designations
-    const designation = (userData.designation || '').trim().toLowerCase();
-    const canSeeSamples = designation === 'manager' || designation === 'owner' || designation === 'sales manager';
-    if (!canSeeSamples) {
-      accessMap.samples = false;
-    }
-
     Object.entries(accessMap).forEach(([section, allowed]) => {
       if (allowed === false) {
         // Hide nav item
