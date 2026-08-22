@@ -65,9 +65,11 @@ function switchWorkflowTab(tab) {
   const titleEl = document.getElementById('jcTabTitle');
   if (titleEl) titleEl.textContent = TAB_LABELS[tab] || tab;
 
-  // Show/hide New button (only on ALL tab)
+  // Show/hide New button (only on ALL tab, and only for users who can edit)
   const newBtn = document.getElementById('jcNewBtn');
-  if (newBtn) newBtn.style.display = (tab === 'ALL') ? '' : 'none';
+  const canEdit = userData.is_admin ||
+    (userData.designation && ['owner','manager'].includes(userData.designation.trim().toLowerCase()));
+  if (newBtn) newBtn.style.display = (tab === 'ALL' && canEdit) ? '' : 'none';
 
   // Show/hide status sub-filters (only on ALL tab)
   const statusFilters = document.getElementById('jcStatusFilters');
@@ -154,12 +156,20 @@ function renderJobCardList() {
     const isCancelled = c.workflow_status === 'CANCELLED';
 
     let actions = '';
+    // Edit/Delete permissions: only Admin, Owner, Manager can edit job cards
+    const canEditJC = userData.is_admin ||
+      (userData.designation && ['owner','manager'].includes(userData.designation.trim().toLowerCase()));
+
     if (jcCurrentTab === 'ALL') {
       if (c.workflow_status === 'NEW' || c.workflow_status === 'CANCELLED') {
-        actions = `
-          <button class="jc-btn-icon jc-btn-edit" onclick="event.stopPropagation();editJobCard(${c.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>
-          <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
-          <button class="jc-btn-accept" onclick="event.stopPropagation();acceptJobCard(${c.id})" title="Accept">Accept</button>`;
+        if (canEditJC) {
+          actions = `
+            <button class="jc-btn-icon jc-btn-edit" onclick="event.stopPropagation();editJobCard(${c.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>
+            <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+            <button class="jc-btn-accept" onclick="event.stopPropagation();acceptJobCard(${c.id})" title="Accept">Accept</button>`;
+        } else {
+          actions = `<button class="jc-btn-accept" onclick="event.stopPropagation();acceptJobCard(${c.id})" title="Accept">Accept</button>`;
+        }
       } else {
         // Cards already in workflow — just show Open button
         actions = `<button class="jc-btn-confirm" onclick="event.stopPropagation();openJobCardDetail(${c.id})" title="View Details">Open</button>`;
@@ -179,7 +189,7 @@ function renderJobCardList() {
     } else if (jcCurrentTab === 'FINAL') {
       actions = `
         <button class="jc-btn-confirm" onclick="event.stopPropagation();openJobCardDetail(${c.id})" title="View Details">Open</button>
-        <button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        ${canEditJC ? `<button class="jc-btn-icon jc-btn-delete" onclick="event.stopPropagation();deleteJobCard(${c.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
         <button class="jc-btn-confirm" onclick="event.stopPropagation();confirmTransition(${c.id},'COMPLETED')">Final Confirm</button>`;
     }
 
