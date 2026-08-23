@@ -367,6 +367,16 @@ async function deleteGroupReminder(rid) {
     });
     if (!res.ok) { rToast('Delete failed','error'); return; }
     document.querySelector(`[data-rid="${rid}"]`)?.remove();
+    // Also remove from Reminders menu section if visible
+    const rpEl = document.querySelector(`[data-rpid="${rid}"]`);
+    if (rpEl) rpEl.remove();
+    // Refresh Reminders menu (sync both views)
+    if (typeof loadRemindersPage === 'function') {
+      loadRemindersPage();
+    }
+    if (typeof updateReminderNavBadge === 'function') {
+      updateReminderNavBadge();
+    }
     rToast('Deleted','success');
   } catch { rToast('Network error','error'); }
 }

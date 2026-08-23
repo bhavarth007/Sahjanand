@@ -559,11 +559,19 @@ async function deleteReminderCard(rid, gid) {
     if (res.ok) {
       const el = document.querySelector(`[data-rpid="${rid}"]`);
       if (el) el.remove();
+      // Also remove from chat reminder section if visible
+      const chatEl = document.querySelector(`[data-rid="${rid}"]`);
+      if (chatEl) chatEl.remove();
+      // Refresh chat reminders list (sync both views)
+      if (typeof loadGroupReminders === 'function' && window.currentGroupId) {
+        loadGroupReminders('pending');
+      }
       // Check if grid is now empty
       const grid = document.getElementById('reminderCardsGrid');
       if (grid && !grid.querySelector('.rp-card')) {
-        grid.innerHTML = '<div class="reminder-cards-empty">No history found.</div>';
+        grid.innerHTML = '<div class="reminder-cards-empty">No pending reminders.</div>';
       }
+      updateReminderNavBadge();
     }
   } catch {}
 }
