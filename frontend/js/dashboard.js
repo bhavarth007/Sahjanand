@@ -510,8 +510,11 @@ function renderReminderCards(items, tab, grid) {
     const toNames = r.remind_to_names && r.remind_to_names.length ? r.remind_to_names.join(', ') : (r.remind_to_name || '');
     const desc = r.description || '';
     const cardClass = isHistory ? 'rp-card rp-card-history' : 'rp-card';
-    const deleteBtn = `<button class="rp-card-delete" onclick="deleteReminderCard(${r.id}, ${r.group_id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>`;
-    const editBtn = (tab === 'pending') ? `<button class="rp-card-edit" onclick="editRpReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
+    const isCreator = r.created_by === userData.id;
+    const canEdit = isAdmin || isCreator;
+    const deleteBtn = canEdit ? `<button class="rp-card-delete" onclick="deleteReminderCard(${r.id}, ${r.group_id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
+    const editBtn = (tab === 'pending' && canEdit) ? `<button class="rp-card-edit" onclick="editRpReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
+    const viewBtn = (!canEdit && tab === 'pending') ? `<button class="rp-card-edit" onclick="viewRpReminder(${r.id})" title="View"><i class="fa-solid fa-eye"></i></button>` : '';
 
     // Media preview — compact icons
     let mediaHtml = '';
@@ -543,6 +546,7 @@ function renderReminderCards(items, tab, grid) {
         </div>
         ${isHistory ? '<div class="rp-card-badge">DONE</div>' : `<div class="rp-card-status">${r.status === 'set' ? 'SET' : 'NOT SET'}</div>`}
         ${editBtn}
+        ${viewBtn}
         ${deleteBtn}
       </div>
     `;
@@ -823,6 +827,89 @@ async function editRpReminder(rid) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// View reminder (read-only) — for non-creator users
+function viewRpReminder(rid) {
+  const card = document.querySelector(`[data-rpid="${rid}"]`);
+  if (!card) return;
+  const r = JSON.parse(card.dataset.rpjson);
+
+  // Open form in read-only mode
+  const panel = document.getElementById('rpFormPanel');
+  if (panel) panel.style.display = 'block';
+  const title = document.getElementById('rpFormTitle');
+  if (title) title.textContent = 'View Reminder (Read Only)';
+
+  document.getElementById('rpReminderName').value = r.name || '';
+  document.getElementById('rpReminderDate').value = r.remind_date || '';
+  document.getElementById('rpReminderTime').value = r.remind_time || '';
+  document.getElementById('rpReminderDesc').value = r.description || '';
+  const statusEl = document.getElementById('rpReminderStatus');
+  if (statusEl) statusEl.value = r.status || 'set';
+
+  // Show media info
+  const infoEl = document.getElementById('rpMediaInfo');
+  if (infoEl) infoEl.textContent = r.media_name ? `📎 ${r.media_name}` : '';
+  if (r.media_url) {
+    document.getElementById('rpMediaUrl').value = r.media_url;
+  }
+
+  // Show remind_to users
+  const container = document.getElementById('rpReminderToContainer');
+  const names = r.remind_to_names || [];
+  if (container) {
+    container.innerHTML = `<div style="padding:8px 12px;background:#f5f5f5;border-radius:8px;font-size:.82rem;color:var(--text-primary);">${names.length ? names.join(', ') : '—'}</div>`;
+  }
+
+  // Disable all form inputs
+  panel.querySelectorAll('input, textarea, select, button').forEach(el => {
+    if (!el.classList.contains('btn-secondary')) el.disabled = true;
+  });
+
+  // Replace save button with close button
+  const actionsEl = panel.querySelector('.rp-form-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = `
+      <div></div>
+      <div><button class="btn-secondary" onclick="closeRpViewMode()">Close</button></div>
+    `;
+  }
+
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeRpViewMode() {
+  const panel = document.getElementById('rpFormPanel');
+  if (panel) {
+    panel.style.display = 'none';
+    // Re-enable all inputs for future use
+    panel.querySelectorAll('input, textarea, select, button').forEach(el => {
+      el.disabled = false;
+    });
+    // Restore original action buttons
+    const actionsEl = panel.querySelector('.rp-form-actions');
+    if (actionsEl) {
+      actionsEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="chat-attach-btn" title="Attach file" onclick="document.getElementById('rpFileInput').click()" style="flex-shrink:0;">
+            <i class="fa-solid fa-paperclip"></i>
+          </button>
+          <button class="chat-record-btn" id="rpVoiceBtn" title="Record voice" onclick="toggleRpVoice()" style="flex-shrink:0;">
+            <i class="fa-solid fa-microphone"></i>
+          </button>
+          <input type="file" id="rpFileInput" style="display:none" accept="image/*,audio/*,video/*" onchange="uploadRpMedia(this)" />
+          <input type="hidden" id="rpMediaUrl" value="" />
+          <input type="hidden" id="rpMediaName" value="" />
+          <span id="rpMediaInfo" style="font-size:.75rem;color:#667781;"></span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="rp-tab" onclick="closeRpNewReminder()">Cancel</button>
+          <button class="btn-primary" onclick="saveRpReminder()"><i class="fa-solid fa-check"></i> Save</button>
+        </div>
+      `;
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Filter persistence (Reminders Page) — mirrors Sales Chat
 // ═══════════════════════════════════════════════════════════════
@@ -927,6 +1014,8 @@ function initRpTuneSelector() {
 window.switchRemindersPageTab = switchRemindersPageTab;
 window.deleteReminderCard = deleteReminderCard;
 window.editRpReminder = editRpReminder;
+window.viewRpReminder = viewRpReminder;
+window.closeRpViewMode = closeRpViewMode;
 window.setRpDefaultFilter = setRpDefaultFilter;
 window.clearRpFilter = clearRpFilter;
 window.removeRpDefaultFilter = removeRpDefaultFilter;

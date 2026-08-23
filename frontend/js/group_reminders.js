@@ -83,8 +83,11 @@ function renderReminders(items, tab) {
     const creatorHtml = r.created_by_name ? `<div class="reminder-row-creator">Created by: ${esc(r.created_by_name)}</div>` : '';
     const mediaHtml = r.media_url ? buildMediaPreview(r.media_url, r.media_name) : '';
     const isAdmin = JSON.parse(localStorage.getItem('sahjanand_user')||'{}').is_admin;
-    const editBtn = (tab==='pending') ? `<button class="reminder-row-edit" onclick="editReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
-    const deleteBtn = `<button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>`;
+    const isCreator = r.created_by === (JSON.parse(localStorage.getItem('sahjanand_user')||'{}').id);
+    const canEdit = isAdmin || isCreator;
+    const editBtn = (tab==='pending' && canEdit) ? `<button class="reminder-row-edit" onclick="editReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
+    const viewBtn = (tab==='pending' && !canEdit) ? `<button class="reminder-row-edit" onclick="viewReminder(${r.id})" title="View"><i class="fa-solid fa-eye"></i></button>` : '';
+    const deleteBtn = canEdit ? `<button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
 
     return `
     <div class="reminder-row" data-rid="${r.id}" data-json='${JSON.stringify(r).replace(/'/g,"&#39;")}'>
@@ -96,6 +99,7 @@ function renderReminders(items, tab) {
       </div>
       <span class="reminder-row-status ${statusClass}">${statusLabel}</span>
       ${editBtn}
+      ${viewBtn}
       ${deleteBtn}
     </div>`;
   }).join('');
@@ -243,6 +247,56 @@ function editReminder(rid) {
     const ids = r.remind_to_ids || (r.remind_to ? [r.remind_to] : []);
     setSelectedReminderToIds(ids);
   });
+}
+
+// View reminder (read-only) — for non-creator users
+function viewReminder(rid) {
+  const row = document.querySelector(`[data-rid="${rid}"]`);
+  if (!row) return;
+  const r = JSON.parse(row.dataset.json);
+
+  // Open the form in read-only mode
+  document.getElementById('reminderForm').style.display = 'block';
+  document.getElementById('reminderFormTitle').textContent = 'View Reminder (Read Only)';
+  document.getElementById('reminderName').value = r.name || '';
+  document.getElementById('reminderDate').value = r.remind_date || '';
+  document.getElementById('reminderTime').value = r.remind_time || '';
+  document.getElementById('reminderDesc').value = r.description || '';
+  document.getElementById('reminderStatus').value = r.status || 'set';
+  document.getElementById('reminderMediaUrl').value = r.media_url || '';
+  document.getElementById('reminderMediaName').value = r.media_name || '';
+  const infoEl = document.getElementById('reminderMediaInfo');
+  if (infoEl) infoEl.textContent = r.media_name ? `📎 ${r.media_name}` : '';
+
+  // Show remind_to as text (not editable dropdown)
+  const container = document.getElementById('reminderToContainer');
+  const names = r.remind_to_names || (r.remind_to_name ? [r.remind_to_name] : []);
+  if (container) {
+    container.innerHTML = `<div style="padding:8px 12px;background:#f5f5f5;border-radius:8px;font-size:.82rem;">${names.length ? names.join(', ') : '—'}</div>`;
+  }
+
+  // Disable all form inputs
+  const form = document.getElementById('reminderForm');
+  form.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = true; });
+
+  // Hide save button, show close only
+  const actions = form.querySelector('.reminder-form-actions') || form.querySelector('[style*="display:flex;gap:8px"]');
+  if (actions) {
+    actions.dataset.originalHtml = actions.innerHTML;
+    actions.innerHTML = `<button class="btn-secondary" onclick="closeViewReminder()">Close</button>`;
+  }
+}
+
+function closeViewReminder() {
+  const form = document.getElementById('reminderForm');
+  if (form) {
+    form.style.display = 'none';
+    // Re-enable inputs
+    form.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = false; });
+    // Restore original action buttons
+    const actions = form.querySelector('[data-original-html]');
+    if (actions) { actions.innerHTML = actions.dataset.originalHtml; delete actions.dataset.originalHtml; }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -590,6 +644,8 @@ window.openReminderForm = openReminderForm;
 window.closeReminderForm = closeReminderForm;
 window.saveReminder = saveReminder;
 window.editReminder = editReminder;
+window.viewReminder = viewReminder;
+window.closeViewReminder = closeViewReminder;
 window.deleteGroupReminder = deleteGroupReminder;
 window.uploadReminderMedia = uploadReminderMedia;
 window.toggleReminderVoice = toggleReminderVoice;

@@ -335,7 +335,8 @@ async def get_all_my_reminders(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Returns reminders targeted at OR created by the current user, across all groups.
+    Returns ALL reminders across all groups (same as Sales Chat view).
+    All users can see all reminders. Only creator + admin can edit.
     tab=pending returns future reminders, tab=history returns past ones.
     """
     result = await db.execute(
@@ -343,17 +344,11 @@ async def get_all_my_reminders(
     )
     all_reminders = result.scalars().all()
 
-    # Filter: user is creator or target
-    user_reminders = [
-        r for r in all_reminders
-        if r.created_by == current_user.id or user_is_target(r, current_user.id)
-    ]
-
-    # Split by pending/history
+    # Split by pending/history — show ALL reminders to everyone
     if tab == "history":
-        items = [r for r in user_reminders if is_past(r.remind_date, r.remind_time)]
+        items = [r for r in all_reminders if is_past(r.remind_date, r.remind_time)]
     else:
-        items = [r for r in user_reminders if not is_past(r.remind_date, r.remind_time)]
+        items = [r for r in all_reminders if not is_past(r.remind_date, r.remind_time)]
 
     # Resolve user names
     user_ids = set()
