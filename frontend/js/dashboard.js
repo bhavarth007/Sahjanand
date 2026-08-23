@@ -84,10 +84,26 @@ function setUserInfo() {
   const nameInput  = document.getElementById('editName');
   const emailInput = document.getElementById('editEmail');
   const mobileInput = document.getElementById('editMobile');
+  const currentPwdInput = document.getElementById('editCurrentPassword');
   if (nameInput)  nameInput.value  = userData.full_name || '';
   if (emailInput) emailInput.value = email;
   if (mobileInput) mobileInput.value = userData.mobile_no || '';
+  if (currentPwdInput) currentPwdInput.value = userData.plain_password || '(not set)';
 }
+
+// ── Toggle password visibility ──
+function togglePwdVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+  } else {
+    input.type = 'password';
+    btn.innerHTML = '<i class="fa-solid fa-eye"></i>';
+  }
+}
+window.togglePwdVisibility = togglePwdVisibility;
 
 // ── Save Profile ────────────────────────────────────────
 async function saveProfile() {

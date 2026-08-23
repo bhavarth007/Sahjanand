@@ -26,6 +26,7 @@ class UserOut(BaseModel):
     can_view_reminders: bool = True
     can_view_samples: bool = True
     can_view_chat: bool = True
+    plain_password: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
