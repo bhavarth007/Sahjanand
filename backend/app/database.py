@@ -98,6 +98,16 @@ async def init_db():
                         except Exception as e:
                             print(f"  ⚠️ Column job_cards.{col_name}: {e}")
 
+            # Add plain_password to users table if missing
+            if insp.has_table("users"):
+                user_cols = [c["name"] for c in insp.get_columns("users")]
+                if "plain_password" not in user_cols:
+                    try:
+                        sync_conn.execute(text("ALTER TABLE users ADD COLUMN plain_password VARCHAR(255)"))
+                        print("  ✅ Added column users.plain_password")
+                    except Exception as e:
+                        print(f"  ⚠️ Column users.plain_password: {e}")
+
         await conn.run_sync(_add_missing_columns)
 
     db_type = "SQLite (local dev)" if "sqlite" in db_url else "PostgreSQL (production)"

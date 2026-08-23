@@ -93,11 +93,15 @@ function setUserInfo() {
 async function saveProfile() {
   const name = (document.getElementById('editName')?.value || '').trim();
   const mobile = (document.getElementById('editMobile')?.value || '').trim();
+  const password = (document.getElementById('editPassword')?.value || '').trim();
   const msgEl = document.getElementById('profileMsg');
 
   // Client-side validation
   if (!name) { showProfileMsg('Please enter your full name.', 'error'); return; }
   if (mobile && (!/^\d{10}$/.test(mobile))) { showProfileMsg('Mobile number must be exactly 10 digits.', 'error'); return; }
+
+  const body = { full_name: name, mobile_no: mobile || null };
+  if (password) body.password = password;
 
   try {
     const res = await fetch(`${API}/api/auth/profile`, {
@@ -106,7 +110,7 @@ async function saveProfile() {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ full_name: name, mobile_no: mobile || null }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {

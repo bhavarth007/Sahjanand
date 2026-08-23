@@ -34,6 +34,7 @@ class UserOut(BaseModel):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     mobile_no: Optional[str] = None
+    password: Optional[str] = None  # New password (optional)
 
 
 class ForgotPasswordRequest(BaseModel):

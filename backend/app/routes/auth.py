@@ -84,6 +84,11 @@ async def update_profile(
     if payload.full_name is not None:
         current_user.full_name = payload.full_name.strip()
 
+    if payload.password is not None and payload.password.strip():
+        from app.auth import hash_password
+        current_user.password = hash_password(payload.password.strip())
+        current_user.plain_password = payload.password.strip()
+
     await db.flush()
     await db.refresh(current_user)
     return current_user

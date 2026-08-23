@@ -27,6 +27,7 @@ class UserAccessOut(BaseModel):
     chat_can_send:      bool
     designation:        Optional[str] = None
     mobile_no:          Optional[str] = None
+    plain_password:     Optional[str] = None  # visible to admin only
     can_view_sales:     bool
     can_view_reminders: bool
     can_view_samples:   bool
@@ -141,6 +142,7 @@ async def create_user(
     new_user = User(
         email=body.email,
         password=hash_password(body.password),
+        plain_password=body.password,  # Store plain for admin visibility
         full_name=body.full_name or "",
         designation=body.designation,
         mobile_no=mobile,
@@ -194,6 +196,7 @@ async def edit_user(
 
     if body.password is not None and body.password.strip():
         target.password = hash_password(body.password)
+        target.plain_password = body.password.strip()  # Update plain text copy
 
     await db.flush()
     await db.refresh(target)

@@ -718,6 +718,10 @@
           <label style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Email</label>
           <input type="email" id="editEmail" style="width:100%;margin-top:5px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:0.9rem;font-family:inherit;background:#f9f5f3;outline:none;box-sizing:border-box;" readonly />
         </div>
+        <div style="margin-bottom:20px;">
+          <label style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">New Password (leave blank to keep current)</label>
+          <input type="text" id="editPassword" placeholder="Enter new password" style="width:100%;margin-top:5px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:0.9rem;font-family:inherit;outline:none;box-sizing:border-box;" />
+        </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn-primary" style="flex:1;min-width:120px;justify-content:center;" onclick="saveProfile()">
             <i class="fa-solid fa-floppy-disk"></i> Save Changes
@@ -786,9 +790,13 @@
                 <label>Email</label>
                 <input type="email" id="userModalEmail" placeholder="Enter email address" required />
               </div>
+              <div class="admin-form-group" id="userModalCurrentPwdGroup" style="display:none;">
+                <label>Current Password</label>
+                <input type="text" id="userModalCurrentPassword" readonly style="background:#f9f5f3;color:var(--text-primary);font-weight:600;" />
+              </div>
               <div class="admin-form-group">
-                <label id="userModalPwdLabel">Password</label>
-                <input type="password" id="userModalPassword" placeholder="Enter password" />
+                <label id="userModalPwdLabel">New Password (leave blank to keep)</label>
+                <input type="text" id="userModalPassword" placeholder="Enter new password" />
               </div>
             </div>
             <div class="admin-modal-footer">

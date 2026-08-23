@@ -268,6 +268,9 @@ function openAddUserModal() {
   document.getElementById('userModalPassword').value = '';
   document.getElementById('userModalPassword').required = true;
   document.getElementById('userModalPwdLabel').textContent = 'Password';
+  // Hide current password for new users
+  const currentPwdGroup = document.getElementById('userModalCurrentPwdGroup');
+  if (currentPwdGroup) currentPwdGroup.style.display = 'none';
   document.getElementById('userModalSubmitBtn').innerHTML = '<i class="fa-solid fa-user-plus"></i> Create';
   document.getElementById('userModal').style.display = 'flex';
 }
@@ -284,7 +287,18 @@ function openEditUserModal(uid) {
   document.getElementById('userModalEmail').value = user.email || '';
   document.getElementById('userModalPassword').value = '';
   document.getElementById('userModalPassword').required = false;
-  document.getElementById('userModalPwdLabel').textContent = 'New Password (leave blank to keep)';
+  // Show current password (admin only)
+  const currentPwdGroup = document.getElementById('userModalCurrentPwdGroup');
+  const currentPwdInput = document.getElementById('userModalCurrentPassword');
+  if (currentPwdGroup && currentPwdInput) {
+    if (user.plain_password) {
+      currentPwdInput.value = user.plain_password;
+      currentPwdGroup.style.display = 'block';
+    } else {
+      currentPwdInput.value = '(not available)';
+      currentPwdGroup.style.display = 'block';
+    }
+  }
   document.getElementById('userModalSubmitBtn').innerHTML = '<i class="fa-solid fa-check"></i> Save';
   document.getElementById('userModal').style.display = 'flex';
 }
