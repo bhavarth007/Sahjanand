@@ -510,8 +510,8 @@ function renderReminderCards(items, tab, grid) {
     const toNames = r.remind_to_names && r.remind_to_names.length ? r.remind_to_names.join(', ') : (r.remind_to_name || '');
     const desc = r.description || '';
     const cardClass = isHistory ? 'rp-card rp-card-history' : 'rp-card';
-    const deleteBtn = isAdmin ? `<button class="rp-card-delete" onclick="deleteReminderCard(${r.id}, ${r.group_id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
-    const editBtn = (tab === 'pending' && isAdmin) ? `<button class="rp-card-edit" onclick="editRpReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
+    const deleteBtn = `<button class="rp-card-delete" onclick="deleteReminderCard(${r.id}, ${r.group_id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>`;
+    const editBtn = (tab === 'pending') ? `<button class="rp-card-edit" onclick="editRpReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
 
     // Media preview — compact icons
     let mediaHtml = '';
@@ -536,8 +536,9 @@ function renderReminderCards(items, tab, grid) {
         <div class="rp-card-body">
           <h4 class="rp-card-title">${escRp(r.name)}</h4>
           ${desc ? `<p class="rp-card-desc">${escRp(desc)}</p>` : ''}
-          ${toNames ? `<div class="rp-card-to"><i class="fa-solid fa-user"></i> ${escRp(toNames)}</div>` : ''}
+          ${toNames ? `<div class="rp-card-to"><i class="fa-solid fa-user"></i> Reminder To: ${escRp(toNames)}</div>` : ''}
           <div class="rp-card-time"><i class="fa-regular fa-clock"></i> ${dateStr}, ${timeStr}</div>
+          ${r.created_by_name ? `<div class="rp-card-creator"><i class="fa-solid fa-user-pen"></i> Created by: ${escRp(r.created_by_name)}</div>` : ''}
           ${mediaHtml}
         </div>
         ${isHistory ? '<div class="rp-card-badge">DONE</div>' : `<div class="rp-card-status">${r.status === 'set' ? 'SET' : 'NOT SET'}</div>`}
@@ -669,11 +670,9 @@ async function loadRpReminderUsers() {
     const res = await fetch(`${API}/api/chat/all-users`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) return;
     const users = await res.json();
-    // Non-admin users cannot see/select admin in the list
+    // All users can be selected (including self — for private reminders)
     const isAdmin = userData.is_admin;
     let filteredUsers = isAdmin ? users : users.filter(u => !u.is_admin);
-    // Exclude current user — cannot assign reminder to yourself
-    filteredUsers = filteredUsers.filter(u => u.id !== userData.id);
 
     container.innerHTML = `
       <div class="multi-select-dropdown" id="rpReminderToDropdown">
@@ -685,7 +684,7 @@ async function loadRpReminderUsers() {
           ${filteredUsers.map(u => `
             <label class="multi-select-option">
               <input type="checkbox" value="${u.id}" data-name="${escRp(u.full_name||u.email)}" onchange="updateRpReminderToSelection()" />
-              <span>${escRp(u.full_name||u.email)}</span>
+              <span>${escRp(u.full_name||u.email)}${u.id === userData.id ? ' (Me)' : ''}</span>
             </label>
           `).join('')}
         </div>

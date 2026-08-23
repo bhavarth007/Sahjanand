@@ -2006,3 +2006,15 @@ tbody tr:hover td { background: var(--bg-light); }
     flex-wrap: wrap;
   }
 }
+
+/* Reminder card creator info */
+.rp-card-creator {
+  font-size: .72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.reminder-row-creator {
+  font-size: .7rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}

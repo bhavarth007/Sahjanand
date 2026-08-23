@@ -78,12 +78,13 @@ function renderReminders(items, tab) {
     const statusLabel = tab==='history'?'Done':(r.status==='set'?'Set':'Not Set');
     // Show all targeted persons
     const toNames = r.remind_to_names && r.remind_to_names.length ? r.remind_to_names : (r.remind_to_name ? [r.remind_to_name] : []);
-    const toLabel = toNames.length ? `<span class="reminder-row-to">→ ${toNames.map(n => esc(n)).join(', ')}</span>` : '';
+    const toLabel = toNames.length ? `<span class="reminder-row-to">→ Reminder To: ${toNames.map(n => esc(n)).join(', ')}</span>` : '';
     const descHtml = r.description ? `<div class="reminder-row-desc">${esc(r.description)}</div>` : '';
+    const creatorHtml = r.created_by_name ? `<div class="reminder-row-creator">Created by: ${esc(r.created_by_name)}</div>` : '';
     const mediaHtml = r.media_url ? buildMediaPreview(r.media_url, r.media_name) : '';
     const isAdmin = JSON.parse(localStorage.getItem('sahjanand_user')||'{}').is_admin;
-    const editBtn = (tab==='pending' && isAdmin) ? `<button class="reminder-row-edit" onclick="editReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
-    const deleteBtn = isAdmin ? `<button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>` : '';
+    const editBtn = (tab==='pending') ? `<button class="reminder-row-edit" onclick="editReminder(${r.id})" title="Edit"><i class="fa-solid fa-pen"></i></button>` : '';
+    const deleteBtn = `<button class="reminder-row-delete" onclick="deleteGroupReminder(${r.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>`;
 
     return `
     <div class="reminder-row" data-rid="${r.id}" data-json='${JSON.stringify(r).replace(/'/g,"&#39;")}'>
@@ -91,7 +92,7 @@ function renderReminders(items, tab) {
       <div class="reminder-row-info">
         <div class="reminder-row-name">${esc(r.name)} ${toLabel}</div>
         <div class="reminder-row-time">${dateStr} • ${timeStr}</div>
-        ${descHtml}${mediaHtml}
+        ${creatorHtml}${descHtml}${mediaHtml}
       </div>
       <span class="reminder-row-status ${statusClass}">${statusLabel}</span>
       ${editBtn}
@@ -166,8 +167,7 @@ async function loadReminderUsers() {
     const isAdmin = currentUserData.is_admin;
     const currentUserId = currentUserData.id;
     const filteredUsers = users.filter(u => {
-      // Always exclude self
-      if (u.id === currentUserId) return false;
+      // Allow self (for private reminders)
       // Non-admin cannot assign to admin
       if (!isAdmin && u.is_admin) return false;
       return true;
@@ -183,7 +183,7 @@ async function loadReminderUsers() {
           ${filteredUsers.map(u => `
             <label class="multi-select-option">
               <input type="checkbox" value="${u.id}" data-name="${esc(u.full_name||u.email)}" onchange="updateReminderToSelection()" />
-              <span>${esc(u.full_name||u.email)}</span>
+              <span>${esc(u.full_name||u.email)}${u.id === currentUserId ? ' (Me)' : ''}</span>
             </label>
           `).join('')}
         </div>
