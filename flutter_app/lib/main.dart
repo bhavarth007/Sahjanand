@@ -647,10 +647,14 @@ class _WebViewScreenState extends State<WebViewScreen>
       await Permission.photos.request();
       await Permission.videos.request();
       await Permission.audio.request();
-      // Request battery optimization exemption for reliable background notifications
-      await Permission.ignoreBatteryOptimizations.request();
-      // Request exact alarm permission for reminders (Android 12+)
-      await Permission.scheduleExactAlarm.request();
+      // Only request battery optimization if not already granted (avoids popup every launch)
+      if (!await Permission.ignoreBatteryOptimizations.isGranted) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+      // Only request exact alarm if not already granted
+      if (!await Permission.scheduleExactAlarm.isGranted) {
+        await Permission.scheduleExactAlarm.request();
+      }
     }
     _initWebView();
     _initFCM();
