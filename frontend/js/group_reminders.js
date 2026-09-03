@@ -14,9 +14,15 @@ async function loadGroupReminders(tab) {
   const gid = window.currentGroupId;
   if (!gid) { renderEmpty(); return; }
   const t = tab || currentRTab;
+  currentRTab = t;
   const token = localStorage.getItem('sahjanand_token');
   try {
-    const res = await fetch(`${R_API}/api/chat/groups/${gid}/reminders?tab=${t}`, {
+    // History: use global endpoint (same as Reminders page) so all records are visible.
+    // Pending: use per-group endpoint so only the selected group's pending reminders show.
+    const url = t === 'history'
+      ? `${R_API}/api/chat/my-all-reminders?tab=history`
+      : `${R_API}/api/chat/groups/${gid}/reminders?tab=pending`;
+    const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return;
@@ -57,7 +63,13 @@ function applyFiltersAndRender(tab) {
   const userFilter = userFilterRaw.startsWith('@') ? userFilterRaw.slice(1).toLowerCase() : userFilterRaw.toLowerCase();
 
   if (titleFilter) items = items.filter(r => r.name.toLowerCase().includes(titleFilter));
-  if (userFilter) items = items.filter(r => (r.remind_to_name || '').toLowerCase().includes(userFilter));
+  if (userFilter) {
+    items = items.filter(r => {
+      const names = (r.remind_to_names || []).join(' ').toLowerCase();
+      const singleName = (r.remind_to_name || '').toLowerCase();
+      return names.includes(userFilter) || singleName.includes(userFilter);
+    });
+  }
 
   renderReminders(items, tab || currentRTab);
 }
@@ -550,8 +562,10 @@ function initFilters() {
   const titleInput = document.getElementById('filterTitle');
   const userInput = document.getElementById('filterUser');
 
-  if (saved.title && titleInput) titleInput.value = saved.title;
-  if (saved.user && userInput) userInput.value = saved.user;
+  // Restore title filter from saved default, but never auto-populate the
+  // user/person filter — it must always start empty (matching Reminders page behaviour).
+  if (titleInput) titleInput.value = saved.title || '';
+  if (userInput) userInput.value = '';
 
   updateFilterBadge();
 }
@@ -574,10 +588,9 @@ function clearFilter() {
   const userInput = document.getElementById('filterUser');
   if (titleInput) titleInput.value = '';
   if (userInput) userInput.value = '';
-  // Re-apply default filter if exists
+  // Re-apply saved title default only — never restore the user/person filter.
   const saved = JSON.parse(localStorage.getItem('reminder_default_filter') || '{}');
   if (saved.title && titleInput) titleInput.value = saved.title;
-  if (saved.user && userInput) userInput.value = saved.user;
   applyFiltersAndRender(currentRTab);
   updateFilterBadge();
 }
