@@ -611,10 +611,11 @@ function switchRemindersPageTab(tab) {
 
 function startRpAutoRefresh() {
   if (rpAutoRefreshInterval) return;
+  // Refresh every 15 seconds so expired reminders move to History quickly
   rpAutoRefreshInterval = setInterval(() => {
     loadRemindersPage(rpCurrentTab);
     updateReminderNavBadge();
-  }, 30000);
+  }, 15000);
 }
 
 // Real-time nav badge update
@@ -1439,7 +1440,16 @@ startGlobalReminderChecker();
 // Re-check immediately when user switches back to this tab
 // (browsers throttle timers in background tabs, so alerts can be missed)
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) checkGlobalUpcomingAlerts();
+  if (!document.hidden) {
+    checkGlobalUpcomingAlerts();
+    // Also refresh the reminders list so expired items move to History right away
+    if (typeof loadRemindersPage === 'function' && rpCurrentTab) {
+      loadRemindersPage(rpCurrentTab);
+    }
+    if (typeof loadGroupReminders === 'function' && window.currentGroupId) {
+      loadGroupReminders('pending');
+    }
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
