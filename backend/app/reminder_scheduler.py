@@ -4,7 +4,7 @@ Runs every 30 seconds during app lifespan.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models.db_models import GroupReminder, User
@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 # Track which reminders we've already alerted (avoid duplicates)
 _alerted_reminders: set = set()
 _scheduler_task: asyncio.Task = None
+
+# IST timezone — same as the route layer so pending/history stays in sync
+_IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def parse_remind_to_ids(reminder) -> list:
@@ -39,7 +42,8 @@ async def check_due_reminders():
             )
             reminders = result.scalars().all()
 
-            now = datetime.now()
+            # now in IST (naive) — same basis as stored reminder strings
+            now = datetime.now(_IST).replace(tzinfo=None)
 
             for r in reminders:
                 try:
@@ -89,6 +93,7 @@ async def check_due_reminders():
 
             # Cleanup old alert keys (reminders more than 1 hour past)
             to_remove = set()
+            cleanup_now = datetime.now(_IST).replace(tzinfo=None)
             for key in _alerted_reminders:
                 try:
                     rid = int(key.split("_")[1])
@@ -96,7 +101,7 @@ async def check_due_reminders():
                     r_check = await db.get(GroupReminder, rid)
                     if r_check:
                         r_dt = datetime.strptime(f"{r_check.remind_date}T{r_check.remind_time}", "%Y-%m-%dT%H:%M")
-                        if (now - r_dt).total_seconds() > 3600:
+                        if (cleanup_now - r_dt).total_seconds() > 3600:
                             to_remove.add(key)
                     else:
                         to_remove.add(key)

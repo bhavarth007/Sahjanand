@@ -1200,14 +1200,26 @@ async function checkGlobalUpcomingAlerts() {
     if (!res.ok) return;
     const items = await res.json();
     const now = new Date();
+    let anyJustExpired = false;
 
     items.forEach(r => {
       const reminderTime = new Date(`${r.remind_date}T${r.remind_time}`);
       const diffMs = reminderTime - now;
       const diffSec = diffMs / 1000;
 
+      // Clean up stale alert keys for reminders more than 1 hour past deadline
+      if (diffSec < -3600) {
+        localStorage.removeItem(`reminder_2min_alert_${r.id}`);
+        localStorage.removeItem(`reminder_deadline_alert_${r.id}`);
+      }
+
+      // Track if any reminder just crossed its deadline (for UI refresh)
+      if (diffSec > -60 && diffSec <= 0) {
+        anyJustExpired = true;
+      }
+
       // Alert 1: At 2 minutes before deadline (120 sec)
-      if (diffSec > 0 && diffSec <= 125 && diffSec > 15) {
+      if (diffSec > 15 && diffSec <= 125) {
         const alertKey = `reminder_2min_alert_${r.id}`;
         if (localStorage.getItem(alertKey)) return;
         localStorage.setItem(alertKey, '1');
@@ -1215,8 +1227,10 @@ async function checkGlobalUpcomingAlerts() {
         sendBrowserNotification(r, 'Reminder in 2 minutes!');
       }
 
-      // Alert 2: At exact deadline (last 15 sec) — with SOUND
-      if (diffSec > -5 && diffSec <= 15) {
+      // Alert 2: At exact deadline — widened to 90s window so background-tab
+      // timer throttling (Chrome/Firefox throttle to ~1 min) cannot miss it.
+      // localStorage key ensures it only fires once per reminder.
+      if (diffSec > -90 && diffSec <= 15) {
         const alertKey = `reminder_deadline_alert_${r.id}`;
         if (localStorage.getItem(alertKey)) return;
         localStorage.setItem(alertKey, '1');
@@ -1225,6 +1239,14 @@ async function checkGlobalUpcomingAlerts() {
         sendBrowserNotification(r, 'Reminder NOW!');
       }
     });
+
+    // If any reminder just crossed its deadline, refresh both UIs immediately
+    // so the card moves from Pending → History without waiting 30 seconds.
+    if (anyJustExpired) {
+      if (typeof loadRemindersPage === 'function') loadRemindersPage(rpCurrentTab);
+      if (typeof loadGroupReminders === 'function') loadGroupReminders(window.currentRTab || 'pending');
+      updateReminderNavBadge();
+    }
   } catch (e) { console.warn('[global-reminder] alert check failed', e); }
 }
 
@@ -1413,6 +1435,12 @@ function playGlobalAlertSound() {
 
 // Start the global checker as soon as dashboard loads
 startGlobalReminderChecker();
+
+// Re-check immediately when user switches back to this tab
+// (browsers throttle timers in background tabs, so alerts can be missed)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) checkGlobalUpcomingAlerts();
+});
 
 // ═══════════════════════════════════════════════════════════════
 // Alert Tune Selector (Admin only)
